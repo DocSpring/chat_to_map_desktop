@@ -1,7 +1,7 @@
 /*!
  * Contacts resolution for iMessage exports.
  *
- * Adapted from imessage-exporter (GPL-3.0):
+ * Adapted from imessage-exporter (GPL-3.0 compatible):
  * https://github.com/ReagentX/imessage-exporter
  */
 
@@ -127,9 +127,16 @@ impl ContactsIndex {
         Ok(Self { index: idx })
     }
 
+    /// Build from an in-memory index (for testing)
+    #[cfg(test)]
+    pub fn from_index(index: HashMap<String, Name>) -> Self {
+        Self { index }
+    }
+
     // MARK: macOS
     /// Build contacts index from macOS Contacts database
-    fn build_from_macos(conn: &Connection) -> Result<Self> {
+    #[cfg_attr(test, allow(dead_code))]
+    pub(crate) fn build_from_macos(conn: &Connection) -> Result<Self> {
         let mut index = HashMap::new();
 
         let mut stmt = conn.prepare(
@@ -259,13 +266,11 @@ impl ContactsIndex {
     }
 
     /// Get the number of contacts in the index
-    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.index.len()
     }
 
     /// Check if the index is empty
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.index.is_empty()
     }
@@ -331,7 +336,7 @@ fn parse_email_list(raw: &str) -> Vec<String> {
 /// - If the number contains "urn:", returns an empty vector
 /// - Returns keys with and without '+' prefix
 /// - For US numbers starting with +1 and 11 digits, also adds variants without the `+1` country code
-fn phone_keys(raw: &str) -> Vec<String> {
+pub fn phone_keys(raw: &str) -> Vec<String> {
     // Skip iMessage business accounts
     if raw.contains("urn:") {
         return vec![];
@@ -395,3 +400,7 @@ fn macos_sources_dir() -> PathBuf {
         .join("AddressBook")
         .join("Sources")
 }
+
+#[cfg(test)]
+#[path = "contacts_tests.rs"]
+mod tests;
