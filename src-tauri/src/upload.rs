@@ -47,12 +47,12 @@ pub type UploadProgressCallback = Box<dyn Fn(u8, String) + Send + Sync>;
 // Configuration
 // =============================================================================
 
-/// Server base URL
-#[cfg(debug_assertions)]
-const SERVER_BASE_URL: &str = "http://localhost:5173";
+/// Server base URL - use `--features dev-server` to point to localhost
+#[cfg(feature = "dev-server")]
+pub const SERVER_BASE_URL: &str = "http://localhost:5173";
 
-#[cfg(not(debug_assertions))]
-const SERVER_BASE_URL: &str = "https://chattomap.com";
+#[cfg(not(feature = "dev-server"))]
+pub const SERVER_BASE_URL: &str = "https://chattomap.com";
 
 // =============================================================================
 // Upload Implementation

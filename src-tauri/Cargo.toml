@@ -49,6 +49,8 @@ path = "src/cli.rs"
 [features]
 default = ["desktop"]
 desktop = ["tauri", "tauri-plugin-shell", "tauri/custom-protocol"]
+# Use local dev server instead of production
+dev-server = []
 
 [profile.release]
 panic = "abort"
