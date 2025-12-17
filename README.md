@@ -40,12 +40,12 @@ task hooks:install
 
 | Command | Description |
 |---------|-------------|
-| `task dev` | Development mode pointing to **localhost:5173** |
-| `task dev:prod` | Development mode pointing to **chattomap.com** |
+| `task dev` | Development mode (uses **chattomap.com** API) |
+| `task dev:local` | Development mode (uses **localhost:5173** API) |
 
-For local development, use `task dev` which expects the SaaS dev server running at `localhost:5173`.
+For most development, use `task dev` which connects to the production API.
 
-To test against production APIs, use `task dev:prod`.
+Use `task dev:local` only when testing against a local SaaS server.
 
 ### Building
 

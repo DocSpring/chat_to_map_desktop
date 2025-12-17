@@ -8,14 +8,14 @@ tasks:
 
   # === Development ===
   dev:
-    desc: Start Tauri dev mode (points to localhost:5173)
-    cmds:
-      - cargo tauri dev --features dev-server
-
-  dev:prod:
-    desc: Start Tauri dev mode (points to production API)
+    desc: Start Tauri dev mode (uses production API)
     cmds:
       - cargo tauri dev
+
+  dev:local:
+    desc: Start Tauri dev mode (uses localhost:5173 API)
+    cmds:
+      - cargo tauri dev --features dev-server
 
   build:
     desc: Build for production (points to chattomap.com)
