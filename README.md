@@ -4,12 +4,19 @@ Desktop app for exporting iMessage chats to [ChatToMap.com](https://chattomap.co
 
 ## Overview
 
-ChatToMap Desktop uses [imessage-exporter](https://github.com/ReagentX/imessage-exporter) to read your iMessage database and export conversations for processing by ChatToMap. The app provides a simple UI for selecting chats and uploading them securely.
+ChatToMap Desktop reads your iMessage database directly and exports conversations for processing by ChatToMap. The app provides a simple UI for selecting chats and uploading them securely.
 
 ## Requirements
 
-- **macOS**: Requires Full Disk Access permission to read `~/Library/Messages/chat.db`
-- **Windows/Linux**: Requires an iTunes backup containing iMessage data
+- **macOS only**: Requires Full Disk Access permission to read `~/Library/Messages/chat.db`
+
+## Installation
+
+Download the latest release from the [Releases](https://github.com/DocSpring/chat_to_map_desktop/releases) page.
+
+On first launch, you'll be prompted to grant Full Disk Access in System Preferences.
+
+---
 
 ## Development
 
@@ -27,24 +34,132 @@ bun install
 
 # Install git hooks
 task hooks:install
-
-# Run development server
-task dev
 ```
 
-### Commands
+### Running the App
 
 | Command | Description |
 |---------|-------------|
-| `task dev` | Start Tauri development mode |
-| `task build` | Build for production |
-| `task ci` | Run all CI checks (required before commits) |
-| `task lint` | Run Biome linter |
-| `task lint:rust` | Run Clippy (Rust linter) |
-| `task test` | Run all tests |
-| `task typecheck` | TypeScript type checking |
+| `task dev` | Development mode pointing to **localhost:5173** |
+| `task dev:prod` | Development mode pointing to **chattomap.com** |
 
-### Quality Standards
+For local development, use `task dev` which expects the SaaS dev server running at `localhost:5173`.
+
+To test against production APIs, use `task dev:prod`.
+
+### Building
+
+| Command | Description |
+|---------|-------------|
+| `task build` | Production build (points to chattomap.com) |
+| `task build:dev` | Release build pointing to localhost (for testing) |
+
+### Testing
+
+```bash
+# Run all tests (Rust + TypeScript)
+task test
+
+# Run only Rust tests
+task test:rust
+
+# Run only TypeScript tests
+task test:ts
+
+# Run TypeScript tests in watch mode
+task test:watch
+```
+
+### Quality Checks
+
+```bash
+# Run ALL checks (required before commits)
+task ci
+```
+
+This runs: typecheck, lint, rust-lint, duplication check, file-length check, and all tests.
+
+| Command | Description |
+|---------|-------------|
+| `task lint` | Biome linter (check only) |
+| `task lint:fix` | Biome linter with auto-fix |
+| `task lint:rust` | Clippy (Rust linter) |
+| `task typecheck` | TypeScript type checking |
+| `task duplication` | Check for code duplication |
+| `task file-length` | Check file length limits |
+
+### CLI Tool
+
+A command-line tool is available for debugging and testing:
+
+```bash
+# Build the CLI
+cd src-tauri && cargo build --bin ctm-cli
+
+# List all chats
+./target/debug/ctm-cli list-chats
+
+# List chats with message counts
+./target/debug/ctm-cli list-chats --show-counts
+
+# Export specific chats (by ID)
+./target/debug/ctm-cli export --chat-ids 1,5,12 --output export.zip
+```
+
+### Manual Testing Checklist
+
+1. **Permission flow**: Launch app without Full Disk Access, verify permission screen appears
+2. **Grant access**: Open System Preferences, grant FDA, click "Check Again"
+3. **Chat list**: Verify chats load with correct names and message counts
+4. **Selection**: Test select all/none, individual selection, filtering
+5. **Export flow**: Select chats, click Export, verify progress stages
+6. **Browser open**: Verify browser opens to results page on completion
+
+---
+
+## Architecture
+
+```
+chat_to_map_desktop/
+├── src/                        # Frontend (TypeScript)
+│   ├── index.html              # Main HTML
+│   ├── main.ts                 # Frontend logic & state
+│   ├── main.test.ts            # Frontend tests
+│   └── styles.css              # Styling
+├── src-tauri/                  # Backend (Rust)
+│   ├── src/
+│   │   ├── lib.rs              # Library exports
+│   │   ├── main.rs             # Tauri commands (GUI)
+│   │   ├── cli.rs              # CLI tool
+│   │   ├── contacts.rs         # AddressBook integration
+│   │   ├── export.rs           # Message export to JSON/zip
+│   │   ├── upload.rs           # Server communication
+│   │   └── test_fixtures.rs    # Test database builders
+│   ├── Cargo.toml              # Rust dependencies
+│   └── tauri.conf.json         # Tauri configuration
+├── Taskfile.yml                # Build commands
+└── reference/                  # Schema documentation
+    └── imessage_schema.sql     # iMessage database schema
+```
+
+### Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `contacts.rs` | Resolves phone/email to contact names via macOS AddressBook |
+| `export.rs` | Reads iMessage DB, exports selected chats to JSON zip |
+| `upload.rs` | Fetches pre-signed URLs, uploads to R2, creates processing jobs |
+
+### Feature Flags
+
+| Flag | Effect |
+|------|--------|
+| `dev-server` | Points to `localhost:5173` instead of `chattomap.com` |
+| `desktop` | Enables Tauri GUI (default) |
+
+---
+
+## Quality Standards
 
 This project follows strict quality standards:
 
@@ -56,21 +171,6 @@ This project follows strict quality standards:
 
 All checks must pass before committing. Git hooks enforce this automatically.
 
-## Architecture
-
-```
-chat_to_map_desktop/
-├── src/                    # Frontend (TypeScript)
-│   ├── index.html          # Main HTML
-│   ├── main.ts             # Frontend logic
-│   └── styles.css          # Styling
-├── src-tauri/              # Backend (Rust)
-│   ├── src/main.rs         # Tauri commands
-│   ├── Cargo.toml          # Rust dependencies
-│   └── tauri.conf.json     # Tauri configuration
-└── Taskfile.yml            # Build commands
-```
-
 ## License
 
-GPL-3.0 (required due to bundling GPL-licensed imessage-exporter)
+GPL-3.0 - See [LICENSE](LICENSE) for details.
