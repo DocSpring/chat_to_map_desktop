@@ -21,7 +21,8 @@ anyhow = "1"
 thiserror = "2"
 
 # iMessage database access - the core functionality
-imessage-database = "2"
+imessage-database = "3"
+rusqlite = "0.37"
 
 [features]
 default = ["custom-protocol"]
