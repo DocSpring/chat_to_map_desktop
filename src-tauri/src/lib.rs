@@ -6,6 +6,8 @@
  */
 
 pub mod contacts;
+pub mod export;
+pub mod upload;
 
 #[cfg(test)]
 pub mod test_fixtures;

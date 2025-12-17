@@ -4,8 +4,10 @@ import { open } from '@tauri-apps/plugin-shell'
 
 // Types matching Rust structs
 interface ChatInfo {
-  id: string
+  id: number
   display_name: string
+  chat_identifier: string
+  service: string
   participant_count: number
   message_count: number
 }
@@ -19,15 +21,16 @@ interface ExportProgress {
 interface ExportResult {
   success: boolean
   job_id: string | null
+  results_url: string | null
   error: string | null
 }
 
 // State
 const state = {
   chats: [] as ChatInfo[],
-  selectedIds: new Set<string>(),
+  selectedIds: new Set<number>(),
   filter: '',
-  lastJobId: null as string | null
+  lastResultsUrl: null as string | null
 }
 
 // Helper to get required DOM element
@@ -110,7 +113,7 @@ function renderChatList(): void {
           <div class="chat-checkbox">${selected ? '✓' : ''}</div>
           <div class="chat-info">
             <div class="chat-name">${escapeHtml(chat.display_name)}</div>
-            <div class="chat-meta">${chat.message_count} messages</div>
+            <div class="chat-meta">${chat.message_count} messages · ${escapeHtml(chat.service)}</div>
           </div>
         </div>
       `
@@ -145,8 +148,11 @@ function setupEventListeners(): void {
     const chatItem = target.closest('.chat-item') as HTMLElement | null
     if (!chatItem) return
 
-    const id = chatItem.dataset['id']
-    if (!id) return
+    const idStr = chatItem.dataset['id']
+    if (!idStr) return
+
+    const id = Number.parseInt(idStr, 10)
+    if (Number.isNaN(id)) return
 
     if (state.selectedIds.has(id)) {
       state.selectedIds.delete(id)
@@ -183,8 +189,8 @@ function setupEventListeners(): void {
 
   // Success screen
   elements.openResultsBtn.addEventListener('click', () => {
-    if (state.lastJobId) {
-      open(`https://chattomap.com/processing/${state.lastJobId}`)
+    if (state.lastResultsUrl) {
+      open(state.lastResultsUrl)
     }
   })
 
@@ -235,12 +241,10 @@ async function handleExport(): Promise<void> {
       chatIds: Array.from(state.selectedIds)
     })
 
-    if (result.success && result.job_id) {
-      state.lastJobId = result.job_id
+    if (result.success && result.results_url) {
+      state.lastResultsUrl = result.results_url
       showScreen(elements.successScreen)
-
-      // Open browser to results
-      await open(`https://chattomap.com/processing/${result.job_id}`)
+      // Browser is opened by Rust side
     } else {
       showError(result.error ?? 'Unknown error occurred')
     }
