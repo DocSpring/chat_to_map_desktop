@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatToMap - Export iMessage</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>ChatToMap</h1>
+        <p class="subtitle">Export your iMessage history</p>
+      </header>
+
+      <main>
+        <!-- Permission check (macOS) -->
+        <div id="permission-screen" class="screen hidden">
+          <div class="icon">⚠️</div>
+          <h2>Permission Required</h2>
+          <p>
+            This app needs Full Disk Access to read your iMessage history. Your
+            messages are uploaded securely and deleted after processing.
+          </p>
+          <button id="open-settings-btn" class="btn btn-primary">
+            Open System Preferences
+          </button>
+          <button id="retry-permission-btn" class="btn btn-secondary">
+            Try Again
+          </button>
+        </div>
+
+        <!-- Chat selection -->
+        <div id="chat-selection-screen" class="screen">
+          <div class="controls">
+            <input
+              type="text"
+              id="filter-input"
+              placeholder="Filter by name or number..."
+            />
+            <div class="bulk-actions">
+              <button id="select-all-btn" class="btn btn-small">
+                Select All
+              </button>
+              <button id="select-none-btn" class="btn btn-small">
+                Select None
+              </button>
+            </div>
+          </div>
+
+          <div id="chat-list" class="chat-list">
+            <!-- Chat items will be inserted here -->
+            <div class="loading">Loading chats...</div>
+          </div>
+
+          <div class="selection-summary">
+            <span id="selected-count">0 chats selected</span>
+          </div>
+
+          <button id="export-btn" class="btn btn-primary btn-large">
+            Export and Upload
+          </button>
+        </div>
+
+        <!-- Progress screen -->
+        <div id="progress-screen" class="screen hidden">
+          <div class="progress-container">
+            <div id="progress-stage" class="progress-stage">Preparing...</div>
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div id="progress-message" class="progress-message"></div>
+          </div>
+        </div>
+
+        <!-- Success screen -->
+        <div id="success-screen" class="screen hidden">
+          <div class="icon">✓</div>
+          <h2>Export Complete!</h2>
+          <p>Your results are ready in your browser. You can close this app.</p>
+          <button id="open-results-btn" class="btn btn-primary">
+            Open Results Again
+          </button>
+        </div>
+
+        <!-- Error screen -->
+        <div id="error-screen" class="screen hidden">
+          <div class="icon">⚠️</div>
+          <h2>Something went wrong</h2>
+          <p id="error-message"></p>
+          <div class="error-actions">
+            <button id="retry-btn" class="btn btn-primary">Try Again</button>
+            <button id="save-locally-btn" class="btn btn-secondary">
+              Save Locally
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <p>Nothing is sent except your chats. Processing happens in the cloud.</p>
+      </footer>
+    </div>
+
+    <script type="module" src="main.ts"></script>
+  </body>
+</html>

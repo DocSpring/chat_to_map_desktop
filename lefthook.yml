@@ -1,0 +1,55 @@
+# Lefthook git hooks configuration
+# https://github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: true
+  commands:
+    # TypeScript/JS checks
+    biome-format:
+      glob: "*.{ts,tsx,js,jsx,json}"
+      run: bunx biome format --write {staged_files}
+      stage_fixed: true
+
+    biome-lint:
+      glob: "*.{ts,tsx,js,jsx}"
+      run: bunx biome check --write {staged_files}
+      stage_fixed: true
+
+    typecheck:
+      glob: "*.{ts,tsx}"
+      run: bunx tsc --noEmit
+
+    duplication:
+      glob: "*.{ts,tsx}"
+      run: bunx jscpd src/
+
+    file-length:
+      run: ./scripts/check_file_length.sh {staged_files}
+
+    biome-ignores:
+      glob: "*.{ts,tsx}"
+      run: |
+        if grep -l "biome-ignore" {staged_files} 2>/dev/null; then
+          echo "❌ Found biome-ignore comments in staged files - these are forbidden!"
+          exit 1
+        fi
+
+    # Rust checks
+    rust-fmt:
+      glob: "*.rs"
+      root: src-tauri
+      run: cargo fmt -- --check
+
+    rust-clippy:
+      glob: "*.rs"
+      root: src-tauri
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+pre-push:
+  commands:
+    test-rust:
+      root: src-tauri
+      run: cargo test
+
+    test-ts:
+      run: bunx vitest run

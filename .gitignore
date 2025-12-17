@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Mobile icons (not targeting mobile platforms)
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# Lock files (use bun.lockb)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

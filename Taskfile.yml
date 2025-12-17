@@ -1,0 +1,139 @@
+version: "3"
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # === Development ===
+  dev:
+    desc: Start Tauri development mode
+    cmds:
+      - cargo tauri dev
+
+  build:
+    desc: Build for production
+    cmds:
+      - cargo tauri build
+
+  # === Quality Checks (run before marking any task complete) ===
+  ci:
+    desc: Run all CI checks
+    cmds:
+      - task: typecheck
+      - task: lint
+      - task: lint:rust
+      - task: check-ignores
+      - task: duplication
+      - task: file-length
+      - task: test
+
+  # === TypeScript/JS Linting ===
+  lint:
+    desc: Run Biome linter (check only)
+    cmds:
+      - bunx biome check .
+
+  lint:fix:
+    desc: Run Biome linter and auto-fix issues
+    cmds:
+      - bunx biome check --write .
+
+  format:
+    desc: Format TypeScript/JS code with Biome
+    cmds:
+      - bunx biome format --write .
+
+  typecheck:
+    desc: TypeScript type checking
+    cmds:
+      - bunx tsc --noEmit
+
+  # === Rust Linting ===
+  lint:rust:
+    desc: Run Clippy (Rust linter)
+    dir: src-tauri
+    cmds:
+      - cargo clippy --all-targets --all-features -- -D warnings
+
+  format:rust:
+    desc: Format Rust code
+    dir: src-tauri
+    cmds:
+      - cargo fmt
+
+  format:rust:check:
+    desc: Check Rust formatting
+    dir: src-tauri
+    cmds:
+      - cargo fmt -- --check
+
+  # === Code Quality ===
+  duplication:
+    desc: Check for code duplication (TypeScript)
+    cmds:
+      - bunx jscpd src/
+
+  file-length:
+    desc: Check file length limits
+    cmds:
+      - ./scripts/check_file_length.sh
+
+  check-ignores:
+    desc: Check for biome-ignore comments (zero tolerance)
+    cmds:
+      - |
+        if grep -r "biome-ignore" --include="*.ts" --include="*.tsx" --include="*.js" src/ 2>/dev/null; then
+          echo "❌ Found biome-ignore comments - these are forbidden!"
+          exit 1
+        fi
+        echo "✅ No biome-ignore comments found"
+
+  # === Testing ===
+  test:
+    desc: Run all tests
+    cmds:
+      - task: test:rust
+      - task: test:ts
+
+  test:rust:
+    desc: Run Rust tests
+    dir: src-tauri
+    cmds:
+      - cargo test
+
+  test:ts:
+    desc: Run TypeScript tests
+    cmds:
+      - bunx vitest run
+
+  test:watch:
+    desc: Run TypeScript tests in watch mode
+    cmds:
+      - bunx vitest
+
+  # === Git Hooks ===
+  hooks:install:
+    desc: Install git hooks with lefthook
+    cmds:
+      - bunx lefthook install
+
+  hooks:run:
+    desc: Run pre-commit hooks manually
+    cmds:
+      - bunx lefthook run pre-commit
+
+  # === Utilities ===
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf target dist node_modules/.cache
+      - cd src-tauri && cargo clean
+
+  deps:update:
+    desc: Update all dependencies
+    cmds:
+      - cd src-tauri && cargo update
+      - bunx npm-check-updates -u
+      - bun install
