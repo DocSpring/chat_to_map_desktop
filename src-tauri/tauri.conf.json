@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.chattomap.desktop",
   "build": {
-    "beforeDevCommand": "",
+    "beforeDevCommand": "bun run vite",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "",
-    "frontendDist": "../src"
+    "beforeBuildCommand": "bun run vite build",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [

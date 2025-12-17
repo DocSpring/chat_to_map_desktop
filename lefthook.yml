@@ -11,7 +11,7 @@ pre-commit:
       stage_fixed: true
 
     biome-lint:
-      glob: "*.{ts,tsx,js,jsx}"
+      glob: "src/**/*.{ts,tsx,js,jsx}"
       run: bunx biome check --write {staged_files}
       stage_fixed: true
 
