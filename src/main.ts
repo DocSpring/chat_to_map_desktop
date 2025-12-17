@@ -68,8 +68,7 @@ const elements = {
   openResultsBtn: getElement<HTMLButtonElement>('open-results-btn'),
 
   errorMessage: getElement<HTMLElement>('error-message'),
-  retryBtn: getElement<HTMLButtonElement>('retry-btn'),
-  saveLocallyBtn: getElement<HTMLButtonElement>('save-locally-btn')
+  retryBtn: getElement<HTMLButtonElement>('retry-btn')
 }
 
 // Screen management
@@ -196,12 +195,14 @@ function setupEventListeners(): void {
 
   // Error screen
   elements.retryBtn.addEventListener('click', handleExport)
-  elements.saveLocallyBtn.addEventListener('click', handleSaveLocally)
 }
 
 async function checkPermissionAndLoadChats(): Promise<void> {
+  console.log('[checkPermissionAndLoadChats] Starting...')
   try {
+    console.log('[checkPermissionAndLoadChats] Invoking check_full_disk_access...')
     const hasAccess = await invoke<boolean>('check_full_disk_access')
+    console.log('[checkPermissionAndLoadChats] hasAccess:', hasAccess)
 
     if (!hasAccess) {
       showScreen(elements.permissionScreen)
@@ -252,11 +253,6 @@ async function handleExport(): Promise<void> {
     console.error('Export error:', error)
     showError(String(error))
   }
-}
-
-function handleSaveLocally(): void {
-  // TODO: Implement save to local file
-  alert('Save locally feature coming soon')
 }
 
 function showError(message: string): void {

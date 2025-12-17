@@ -22,8 +22,14 @@ pub struct ExportResult {
 
 /// List available iMessage chats
 #[tauri::command]
-async fn list_chats() -> Result<Vec<ChatInfo>, String> {
-    lib_list_chats()
+fn list_chats() -> Result<Vec<ChatInfo>, String> {
+    eprintln!("[tauri::list_chats] Command invoked");
+    let result = lib_list_chats();
+    eprintln!(
+        "[tauri::list_chats] Result: {:?}",
+        result.as_ref().map(|v| v.len())
+    );
+    result
 }
 
 /// Export selected chats and upload to server
@@ -129,19 +135,28 @@ async fn export_and_upload(
 
 /// Check if Full Disk Access is granted (macOS)
 #[tauri::command]
-async fn check_full_disk_access() -> Result<bool, String> {
+fn check_full_disk_access() -> Result<bool, String> {
+    eprintln!("[check_full_disk_access] Checking...");
     #[cfg(target_os = "macos")]
     {
         // Check if we can actually read the database
         let db_path = default_db_path();
+        eprintln!("[check_full_disk_access] DB path: {:?}", db_path);
         if !db_path.exists() {
+            eprintln!("[check_full_disk_access] DB does not exist");
             return Ok(false);
         }
 
         // Try to open the database - this will fail without FDA
         match get_connection(&db_path) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
+            Ok(_) => {
+                eprintln!("[check_full_disk_access] FDA granted (can open DB)");
+                Ok(true)
+            }
+            Err(e) => {
+                eprintln!("[check_full_disk_access] FDA denied: {:?}", e);
+                Ok(false)
+            }
         }
     }
 
@@ -153,7 +168,7 @@ async fn check_full_disk_access() -> Result<bool, String> {
 
 /// Open System Preferences to Full Disk Access (macOS)
 #[tauri::command]
-async fn open_full_disk_access_settings() -> Result<(), String> {
+fn open_full_disk_access_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
@@ -164,21 +179,6 @@ async fn open_full_disk_access_settings() -> Result<(), String> {
     Ok(())
 }
 
-/// Save export locally (fallback when upload fails)
-#[tauri::command]
-async fn save_export_locally(chat_ids: Vec<i32>, save_path: String) -> Result<String, String> {
-    let export_result = tokio::task::spawn_blocking(move || export_chats(&chat_ids, None))
-        .await
-        .map_err(|e| format!("Export task failed: {e}"))?
-        .map_err(|e| format!("Export failed: {e}"))?;
-
-    // Copy zip to user-specified location
-    std::fs::copy(&export_result.zip_path, &save_path)
-        .map_err(|e| format!("Failed to save file: {e}"))?;
-
-    Ok(save_path)
-}
-
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -187,7 +187,6 @@ fn main() {
             export_and_upload,
             check_full_disk_access,
             open_full_disk_access_settings,
-            save_export_locally,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

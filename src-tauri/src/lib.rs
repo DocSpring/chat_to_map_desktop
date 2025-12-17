@@ -39,24 +39,44 @@ pub struct ChatInfo {
     pub message_count: usize,
 }
 
-/// Get message counts per chat using custom SQL
-fn get_message_counts(
-    db: &rusqlite::Connection,
-) -> Result<HashMap<i32, usize>, imessage_database::error::table::TableError> {
-    let mut counts = HashMap::new();
+/// Chat statistics (message count and last message timestamp)
+struct ChatStats {
+    message_count: usize,
+    last_message_date: i64,
+}
 
-    let mut stmt =
-        db.prepare("SELECT chat_id, COUNT(*) as count FROM chat_message_join GROUP BY chat_id")?;
+/// Get message counts and last message date per chat using custom SQL
+fn get_chat_stats(
+    db: &rusqlite::Connection,
+) -> Result<HashMap<i32, ChatStats>, imessage_database::error::table::TableError> {
+    let mut stats = HashMap::new();
+
+    let mut stmt = db.prepare(
+        "SELECT cmj.chat_id, COUNT(*) as count, MAX(m.date) as last_date
+         FROM chat_message_join cmj
+         JOIN message m ON cmj.message_id = m.ROWID
+         GROUP BY cmj.chat_id",
+    )?;
 
     let rows = stmt.query_map([], |row| {
-        Ok((row.get::<_, i32>(0)?, row.get::<_, usize>(1)?))
+        Ok((
+            row.get::<_, i32>(0)?,
+            row.get::<_, usize>(1)?,
+            row.get::<_, i64>(2).unwrap_or(0),
+        ))
     })?;
 
-    for (chat_id, count) in rows.flatten() {
-        counts.insert(chat_id, count);
+    for (chat_id, count, last_date) in rows.flatten() {
+        stats.insert(
+            chat_id,
+            ChatStats {
+                message_count: count,
+                last_message_date: last_date,
+            },
+        );
     }
 
-    Ok(counts)
+    Ok(stats)
 }
 
 /// Resolve a display name for a chat, using contacts if available
@@ -96,61 +116,86 @@ pub fn resolve_chat_display_name(
 
 /// List available iMessage chats
 pub fn list_chats() -> Result<Vec<ChatInfo>, String> {
+    eprintln!("[list_chats] Starting...");
+
     // Get database path
     let db_path = default_db_path();
+    eprintln!("[list_chats] DB path: {:?}", db_path);
 
     // Connect to database
     let db = get_connection(&db_path).map_err(|e| format!("Failed to connect to database: {e}"))?;
+    eprintln!("[list_chats] Connected to database");
 
     // Build contacts index for name resolution
+    eprintln!("[list_chats] Building contacts index...");
     let contacts_index = ContactsIndex::build(None).unwrap_or_default();
+    eprintln!("[list_chats] Contacts index built");
 
     // Cache all chats
+    eprintln!("[list_chats] Loading chats...");
     let chats = Chat::cache(&db).map_err(|e| format!("Failed to load chats: {e}"))?;
+    eprintln!("[list_chats] Loaded {} chats", chats.len());
 
     // Cache handles (contacts)
+    eprintln!("[list_chats] Loading handles...");
     let handles = Handle::cache(&db).map_err(|e| format!("Failed to load handles: {e}"))?;
     let deduped_handles = Handle::dedupe(&handles);
+    eprintln!("[list_chats] Loaded {} handles", handles.len());
 
     // Build participants map with resolved names
     let participants_map = contacts_index.build_participants_map(&handles, &deduped_handles);
 
     // Cache chat participants (chat_id -> set of handle_ids)
+    eprintln!("[list_chats] Loading chat participants...");
     let chat_participants =
         ChatToHandle::cache(&db).map_err(|e| format!("Failed to load participants: {e}"))?;
+    eprintln!(
+        "[list_chats] Loaded participants for {} chats",
+        chat_participants.len()
+    );
 
-    // Get message counts
-    let message_counts =
-        get_message_counts(&db).map_err(|e| format!("Failed to get message counts: {e}"))?;
+    // Get chat stats (message counts and last message dates)
+    eprintln!("[list_chats] Getting chat stats...");
+    let chat_stats = get_chat_stats(&db).map_err(|e| format!("Failed to get chat stats: {e}"))?;
+    eprintln!("[list_chats] Got chat stats");
 
-    // Build result
-    let mut result: Vec<ChatInfo> = chats
+    // Build result with last_message_date for sorting
+    let mut result: Vec<(ChatInfo, i64)> = chats
         .into_iter()
         .map(|(id, chat)| {
             let participants = chat_participants.get(&id);
             let participant_count = participants.map(|p| p.len()).unwrap_or(0);
-            let message_count = message_counts.get(&id).copied().unwrap_or(0);
+            let stats = chat_stats.get(&id);
+            let message_count = stats.map(|s| s.message_count).unwrap_or(0);
+            let last_message_date = stats.map(|s| s.last_message_date).unwrap_or(0);
 
             let display_name =
                 resolve_chat_display_name(&chat, participants, &participants_map, &deduped_handles);
 
-            ChatInfo {
-                id,
-                display_name,
-                chat_identifier: chat.chat_identifier.clone(),
-                service: chat
-                    .service_name
-                    .as_deref()
-                    .unwrap_or("Unknown")
-                    .to_string(),
-                participant_count,
-                message_count,
-            }
+            (
+                ChatInfo {
+                    id,
+                    display_name,
+                    chat_identifier: chat.chat_identifier.clone(),
+                    service: chat
+                        .service_name
+                        .as_deref()
+                        .unwrap_or("Unknown")
+                        .to_string(),
+                    participant_count,
+                    message_count,
+                },
+                last_message_date,
+            )
         })
         .collect();
 
-    // Sort by message count descending (most active chats first)
-    result.sort_by(|a, b| b.message_count.cmp(&a.message_count));
+    // Sort by last message date descending (most recent first)
+    result.sort_by(|a, b| b.1.cmp(&a.1));
 
+    // Extract just the ChatInfo
+    let result: Vec<ChatInfo> = result.into_iter().map(|(info, _)| info).collect();
+
+    eprintln!("[list_chats] Done! Returning {} chats", result.len());
     Ok(result)
 }

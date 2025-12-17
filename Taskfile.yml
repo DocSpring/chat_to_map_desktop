@@ -15,17 +15,17 @@ tasks:
   dev:local:
     desc: Start Tauri dev mode (uses localhost:5173 API)
     cmds:
-      - cargo tauri dev --features dev-server
+      - cargo tauri dev --features desktop,dev-server
 
   build:
     desc: Build for production (points to chattomap.com)
     cmds:
       - cargo tauri build
 
-  build:dev:
-    desc: Build release with dev server (for testing)
+  build:local:
+    desc: Build release with localhost API (for testing)
     cmds:
-      - cargo tauri build --features dev-server
+      - cargo tauri build --features desktop,dev-server
 
   # === Quality Checks (run before marking any task complete) ===
   ci:

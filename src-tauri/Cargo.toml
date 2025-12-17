@@ -7,6 +7,7 @@ license = "GPL-3.0"
 repository = "https://github.com/DocSpring/chat_to_map_desktop"
 edition = "2021"
 rust-version = "1.70"
+default-run = "chat-to-map-desktop"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
