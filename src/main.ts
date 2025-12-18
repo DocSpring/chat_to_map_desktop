@@ -282,8 +282,8 @@ function getMockChats(): ChatInfo[] {
   return [
     {
       id: 1,
-      display_name: 'Masha Broadbent',
-      chat_identifier: '+1234567890',
+      display_name: 'Alice Johnson',
+      chat_identifier: '+15551234567',
       service: 'iMessage',
       participant_count: 1,
       message_count: 1542
@@ -298,8 +298,8 @@ function getMockChats(): ChatInfo[] {
     },
     {
       id: 3,
-      display_name: 'John Smith',
-      chat_identifier: '+0987654321',
+      display_name: 'Bob Williams',
+      chat_identifier: '+15559876543',
       service: 'iMessage',
       participant_count: 1,
       message_count: 456
