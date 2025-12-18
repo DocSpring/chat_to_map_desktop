@@ -18,12 +18,13 @@ check_file() {
   local file="$1"
   local line_count
 
-  # Skip if file doesn't exist
+  # Skip if file doesn't exist or is a symlink
   [[ ! -f "$file" ]] && return 0
+  [[ -L "$file" ]] && return 0
 
   # Skip excluded patterns
   case "$file" in
-    *.md|*.json|*.yml|*.yaml|*.toml|*.txt|*.lock|*.css|*.html|LICENSE|CREDITS*)
+    *.md|*.json|*.yml|*.yaml|*.toml|*.txt|*.lock|*.css|*.html|LICENSE|COPYING|CREDITS*)
       return 0
       ;;
     *.png|*.jpg|*.jpeg|*.gif|*.ico|*.icns|*.svg|*.webp)

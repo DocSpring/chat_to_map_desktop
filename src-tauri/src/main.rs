@@ -14,6 +14,7 @@ use chat_to_map_desktop::{
 use clap::Parser;
 use imessage_database::{tables::table::get_connection, util::dirs::default_db_path};
 use serde::{Deserialize, Serialize};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::Emitter;
 
 /// CLI arguments for the desktop app
@@ -242,6 +243,33 @@ fn get_screenshot_config(state: tauri::State<AppState>) -> ScreenshotConfigRespo
     }
 }
 
+/// Open the Open Source Licenses (CREDITS.md)
+#[tauri::command]
+fn open_licenses() -> Result<(), String> {
+    // Get path to CREDITS.md relative to the executable
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let app_dir = exe_path.parent().ok_or("No parent directory")?;
+
+    // In development, CREDITS.md is at the repo root
+    // In production bundle, it's in Resources
+    let credits_paths = vec![
+        app_dir.join("../Resources/CREDITS.md"), // macOS bundle
+        app_dir.join("../../CREDITS.md"),        // Development (src-tauri/target/debug)
+        app_dir.join("../../../CREDITS.md"),     // Development (nested)
+        std::path::PathBuf::from("CREDITS.md"),  // Current dir fallback
+    ];
+
+    for path in credits_paths {
+        if path.exists() {
+            return open::that(&path).map_err(|e| format!("Failed to open CREDITS.md: {e}"));
+        }
+    }
+
+    // Fallback: open GitHub repo
+    open::that("https://github.com/DocSpring/chat_to_map_desktop/blob/main/CREDITS.md")
+        .map_err(|e| format!("Failed to open URL: {e}"))
+}
+
 /// Take a screenshot and save it to the specified filename
 #[tauri::command]
 fn take_screenshot(state: tauri::State<AppState>, filename: String) -> Result<String, String> {
@@ -282,6 +310,29 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(app_state)
+        .setup(|app| {
+            // Build Help menu with Open Source Licenses item
+            let licenses_item = MenuItemBuilder::new("Open Source Licenses")
+                .id("open_licenses")
+                .build(app)?;
+
+            let help_menu = SubmenuBuilder::new(app, "Help")
+                .item(&licenses_item)
+                .build()?;
+
+            let menu = MenuBuilder::new(app).item(&help_menu).build()?;
+
+            app.set_menu(menu)?;
+
+            Ok(())
+        })
+        .on_menu_event(|_app, event| {
+            if event.id().as_ref() == "open_licenses" {
+                if let Err(e) = open_licenses() {
+                    eprintln!("Failed to open licenses: {e}");
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             list_chats,
             export_and_upload,
@@ -289,6 +340,7 @@ fn main() {
             open_full_disk_access_settings,
             get_screenshot_config,
             take_screenshot,
+            open_licenses,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
