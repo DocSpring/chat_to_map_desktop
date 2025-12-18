@@ -26,6 +26,9 @@ check_file() {
     *.md|*.json|*.yml|*.yaml|*.toml|*.txt|*.lock|*.css|*.html|LICENSE|CREDITS*)
       return 0
       ;;
+    *.png|*.jpg|*.jpeg|*.gif|*.ico|*.icns|*.svg|*.webp)
+      return 0
+      ;;
     *node_modules*|*target/*|*dist/*|*build/*)
       return 0
       ;;

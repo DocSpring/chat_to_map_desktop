@@ -34,6 +34,10 @@ reqwest = { version = "0.12", features = ["json", "multipart"] }
 uuid = { version = "1", features = ["v4"] }
 open = "5"
 
+# Screenshot functionality (for testing/documentation)
+xcap = "0.8"
+image = "0.25"
+
 [lib]
 name = "chat_to_map_desktop"
 path = "src/lib.rs"

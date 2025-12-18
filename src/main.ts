@@ -25,6 +25,13 @@ interface ExportResult {
   error: string | null
 }
 
+interface ScreenshotConfig {
+  enabled: boolean
+  theme: string
+  force_no_fda: boolean
+  output_dir: string
+}
+
 // State
 const state = {
   chats: [] as ChatInfo[],
@@ -270,11 +277,131 @@ async function setupProgressListener(): Promise<void> {
   })
 }
 
+// Mock data for screenshot mode
+function getMockChats(): ChatInfo[] {
+  return [
+    {
+      id: 1,
+      display_name: 'Masha Broadbent',
+      chat_identifier: '+1234567890',
+      service: 'iMessage',
+      participant_count: 1,
+      message_count: 1542
+    },
+    {
+      id: 2,
+      display_name: 'Travel Planning Group',
+      chat_identifier: 'chat123',
+      service: 'iMessage',
+      participant_count: 5,
+      message_count: 823
+    },
+    {
+      id: 3,
+      display_name: 'John Smith',
+      chat_identifier: '+0987654321',
+      service: 'iMessage',
+      participant_count: 1,
+      message_count: 456
+    }
+  ]
+}
+
+// Screenshot mode functions
+function setTheme(theme: string): void {
+  if (theme === 'light' || theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', theme)
+  } else {
+    // 'system' - remove attribute to use system preference
+    document.documentElement.removeAttribute('data-theme')
+  }
+}
+
+async function takeScreenshot(filename: string): Promise<void> {
+  // Small delay to ensure rendering is complete
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const path = await invoke<string>('take_screenshot', { filename })
+  console.log(`Screenshot saved: ${path}`)
+}
+
+async function runScreenshotMode(config: ScreenshotConfig): Promise<void> {
+  console.log('Running screenshot mode...')
+  console.log('Config:', config)
+
+  // Set theme
+  setTheme(config.theme)
+
+  // Determine theme suffix for filenames
+  const themeSuffix = config.theme === 'system' ? 'system' : config.theme
+
+  // Screen 1: Permission screen (if force_no_fda)
+  if (config.force_no_fda) {
+    showScreen(elements.permissionScreen)
+    await takeScreenshot(`01-permission-${themeSuffix}.png`)
+  }
+
+  // Screen 2: Chat selection with chats loaded
+  showScreen(elements.chatSelectionScreen)
+
+  // Load real chats if we have FDA access, otherwise show mock data
+  if (!config.force_no_fda) {
+    try {
+      state.chats = await invoke<ChatInfo[]>('list_chats')
+    } catch {
+      // If loading fails, use mock data for screenshots
+      state.chats = getMockChats()
+    }
+  } else {
+    // Mock data for permission-denied screenshots
+    state.chats = getMockChats()
+  }
+
+  renderChatList()
+  await takeScreenshot(`02-chat-selection-empty-${themeSuffix}.png`)
+
+  // Select a chat
+  if (state.chats.length > 0) {
+    state.selectedIds.add(state.chats[0].id)
+    renderChatList()
+    await takeScreenshot(`03-chat-selection-selected-${themeSuffix}.png`)
+  }
+
+  // Screen 3: Progress screen
+  showScreen(elements.progressScreen)
+  elements.progressStage.textContent = 'Exporting'
+  elements.progressFill.style.width = '35%'
+  elements.progressMessage.textContent = 'Exporting messages...'
+  await takeScreenshot(`04-progress-${themeSuffix}.png`)
+
+  // Screen 4: Success screen
+  showScreen(elements.successScreen)
+  await takeScreenshot(`05-success-${themeSuffix}.png`)
+
+  // Screen 5: Error screen
+  showScreen(elements.errorScreen)
+  elements.errorMessage.textContent = 'Connection failed: Unable to reach server'
+  await takeScreenshot(`06-error-${themeSuffix}.png`)
+
+  console.log('Screenshot mode complete!')
+
+  // Exit the app after screenshots
+  // Note: In Tauri, we can't easily exit from JS, so we just log completion
+  console.log('All screenshots saved. You can close the app now.')
+}
+
 // Initialize
 async function init(): Promise<void> {
   setupEventListeners()
   await setupProgressListener()
-  await checkPermissionAndLoadChats()
+
+  // Check if we're in screenshot mode
+  const config = await invoke<ScreenshotConfig>('get_screenshot_config')
+
+  if (config.enabled) {
+    await runScreenshotMode(config)
+  } else {
+    await checkPermissionAndLoadChats()
+  }
 }
 
 init()

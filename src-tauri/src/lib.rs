@@ -7,6 +7,7 @@
 
 pub mod contacts;
 pub mod export;
+pub mod screenshot;
 pub mod upload;
 
 #[cfg(test)]

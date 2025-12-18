@@ -1,15 +1,47 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::path::PathBuf;
+use std::sync::Mutex;
+
 use chat_to_map_desktop::{
     export::{export_chats, ExportProgress},
     list_chats as lib_list_chats,
+    screenshot::{capture_window, ScreenshotConfig},
     upload::{create_job, get_presigned_url, get_results_url, upload_file},
     ChatInfo,
 };
+use clap::Parser;
 use imessage_database::{tables::table::get_connection, util::dirs::default_db_path};
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
+
+/// CLI arguments for the desktop app
+#[derive(Parser, Debug)]
+#[command(name = "chat-to-map-desktop")]
+#[command(about = "ChatToMap Desktop - Export iMessage chats")]
+struct Args {
+    /// Run in screenshot mode for testing/documentation
+    #[arg(long)]
+    screenshot_mode: bool,
+
+    /// Theme to use: light, dark, or system (default: system)
+    #[arg(long, default_value = "system")]
+    theme: String,
+
+    /// Force FDA (Full Disk Access) check to return false
+    #[arg(long)]
+    force_no_fda: bool,
+
+    /// Output directory for screenshots (default: ./screenshots)
+    #[arg(long, default_value = "./screenshots")]
+    output_dir: PathBuf,
+}
+
+/// App state for screenshot configuration
+struct AppState {
+    screenshot_config: Mutex<ScreenshotConfig>,
+}
 
 /// Export result returned to the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,9 +166,19 @@ async fn export_and_upload(
 }
 
 /// Check if Full Disk Access is granted (macOS)
+/// Respects the --force-no-fda flag for screenshot testing
 #[tauri::command]
-fn check_full_disk_access() -> Result<bool, String> {
+fn check_full_disk_access(state: tauri::State<AppState>) -> Result<bool, String> {
     eprintln!("[check_full_disk_access] Checking...");
+
+    // Check if we're forcing FDA to be denied (for screenshot mode)
+    let config = state.screenshot_config.lock().unwrap();
+    if config.force_no_fda {
+        eprintln!("[check_full_disk_access] Force no FDA enabled");
+        return Ok(false);
+    }
+    drop(config);
+
     #[cfg(target_os = "macos")]
     {
         // Check if we can actually read the database
@@ -179,14 +221,74 @@ fn open_full_disk_access_settings() -> Result<(), String> {
     Ok(())
 }
 
+/// Screenshot mode config returned to frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenshotConfigResponse {
+    pub enabled: bool,
+    pub theme: String,
+    pub force_no_fda: bool,
+    pub output_dir: String,
+}
+
+/// Get screenshot configuration (for frontend to detect screenshot mode)
+#[tauri::command]
+fn get_screenshot_config(state: tauri::State<AppState>) -> ScreenshotConfigResponse {
+    let config = state.screenshot_config.lock().unwrap();
+    ScreenshotConfigResponse {
+        enabled: config.enabled,
+        theme: config.theme.clone(),
+        force_no_fda: config.force_no_fda,
+        output_dir: config.output_dir.to_string_lossy().to_string(),
+    }
+}
+
+/// Take a screenshot and save it to the specified filename
+#[tauri::command]
+fn take_screenshot(state: tauri::State<AppState>, filename: String) -> Result<String, String> {
+    let config = state.screenshot_config.lock().unwrap();
+    let output_path = config.output_dir.join(&filename);
+    drop(config);
+
+    // Ensure output directory exists
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create output directory: {e}"))?;
+    }
+
+    capture_window(&output_path)?;
+    Ok(output_path.to_string_lossy().to_string())
+}
+
 fn main() {
+    // Parse CLI arguments
+    let args = Args::parse();
+
+    // Build screenshot config from args
+    let screenshot_config = ScreenshotConfig {
+        enabled: args.screenshot_mode,
+        theme: args.theme,
+        force_no_fda: args.force_no_fda,
+        output_dir: args.output_dir,
+    };
+
+    eprintln!("[main] Screenshot mode: {}", screenshot_config.enabled);
+    eprintln!("[main] Theme: {}", screenshot_config.theme);
+    eprintln!("[main] Force no FDA: {}", screenshot_config.force_no_fda);
+
+    let app_state = AppState {
+        screenshot_config: Mutex::new(screenshot_config),
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             list_chats,
             export_and_upload,
             check_full_disk_access,
             open_full_disk_access_settings,
+            get_screenshot_config,
+            take_screenshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

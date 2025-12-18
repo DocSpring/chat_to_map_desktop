@@ -1,3 +1,4 @@
+/* Light theme (default) */
 :root {
   --color-primary: #2563eb;
   --color-primary-hover: #1d4ed8;
@@ -11,12 +12,14 @@
   --color-text-secondary: #6b7280;
   --color-border: #e5e7eb;
   --color-selected: #eff6ff;
+  --color-input-bg: #ffffff;
   --radius: 8px;
   --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
 }
 
+/* Dark theme colors */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --color-primary: #3b82f6;
     --color-primary-hover: #2563eb;
     --color-secondary: #9ca3af;
@@ -29,7 +32,25 @@
     --color-text-secondary: #9ca3af;
     --color-border: #374151;
     --color-selected: #1e3a5f;
+    --color-input-bg: #374151;
   }
+}
+
+/* Force dark theme via data attribute (overrides system preference) */
+:root[data-theme="dark"] {
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-secondary: #9ca3af;
+  --color-secondary-hover: #6b7280;
+  --color-success: #34d399;
+  --color-error: #f87171;
+  --color-bg: #1f2937;
+  --color-bg-secondary: #111827;
+  --color-text: #f9fafb;
+  --color-text-secondary: #9ca3af;
+  --color-border: #374151;
+  --color-selected: #1e3a5f;
+  --color-input-bg: #374151;
 }
 
 * {
@@ -67,10 +88,17 @@ header {
   margin-bottom: 24px;
 }
 
+header .header-logo {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 8px;
+}
+
 header h1 {
   font-size: 24px;
   font-weight: 600;
   color: var(--color-primary);
+  margin-top: 0;
 }
 
 header .subtitle {
@@ -116,6 +144,8 @@ main {
   border-radius: var(--radius);
   outline: none;
   transition: border-color 0.2s;
+  background: var(--color-input-bg);
+  color: var(--color-text);
 }
 
 #filter-input:focus {
@@ -155,7 +185,7 @@ main {
 }
 
 .chat-item.selected {
-  background: #eff6ff;
+  background: var(--color-selected);
 }
 
 .chat-checkbox {
