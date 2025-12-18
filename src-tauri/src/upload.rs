@@ -73,7 +73,11 @@ pub async fn get_presigned_url() -> Result<PresignResponse, String> {
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("Server error {}: {}", status, body));
+        return Err(format!(
+            "Server error {}: {}",
+            status,
+            sanitize_error_body(&body)
+        ));
     }
 
     response
@@ -119,7 +123,11 @@ pub async fn upload_file(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("Upload failed {}: {}", status, body));
+        return Err(format!(
+            "Upload failed {}: {}",
+            status,
+            sanitize_error_body(&body)
+        ));
     }
 
     emit_progress(100, "Upload complete".to_string());
@@ -153,7 +161,11 @@ pub async fn create_job(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("Create job failed {}: {}", status, body));
+        return Err(format!(
+            "Create job failed {}: {}",
+            status,
+            sanitize_error_body(&body)
+        ));
     }
 
     response
@@ -170,6 +182,66 @@ pub fn get_results_url(job_id: &str) -> String {
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+/// Sanitize an error response body for display
+///
+/// If the body looks like HTML, extract a meaningful message or return a generic error.
+/// Otherwise, truncate and return the raw body.
+fn sanitize_error_body(body: &str) -> String {
+    let trimmed = body.trim();
+
+    // Empty body
+    if trimmed.is_empty() {
+        return "(empty response)".to_string();
+    }
+
+    // Detect HTML content
+    if trimmed.starts_with("<!DOCTYPE")
+        || trimmed.starts_with("<!doctype")
+        || trimmed.starts_with("<html")
+        || trimmed.starts_with("<HTML")
+    {
+        // Try to extract title or meaningful content
+        if let Some(title) = extract_html_title(trimmed) {
+            return title;
+        }
+        return "Server returned an HTML error page".to_string();
+    }
+
+    // Try to parse as JSON error
+    if trimmed.starts_with('{') {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if let Some(error) = json.get("error").and_then(|v| v.as_str()) {
+                return error.to_string();
+            }
+            if let Some(message) = json.get("message").and_then(|v| v.as_str()) {
+                return message.to_string();
+            }
+        }
+    }
+
+    // Plain text - truncate if too long
+    if trimmed.len() > 200 {
+        format!("{}...", &trimmed[..200])
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Extract title from HTML content
+fn extract_html_title(html: &str) -> Option<String> {
+    let lower = html.to_lowercase();
+    if let Some(start) = lower.find("<title>") {
+        if let Some(end) = lower[start..].find("</title>") {
+            let title_start = start + 7;
+            let title = html[title_start..start + end].trim();
+            if !title.is_empty() {
+                return Some(title.to_string());
+            }
+        }
+    }
+    None
+}
 
 /// Format file size for display
 fn format_size(bytes: usize) -> String {
@@ -207,5 +279,53 @@ mod tests {
         let url = get_results_url("abc123");
         assert!(url.contains("abc123"));
         assert!(url.contains("/processing/"));
+    }
+
+    #[test]
+    fn test_sanitize_error_body_empty() {
+        assert_eq!(sanitize_error_body(""), "(empty response)");
+        assert_eq!(sanitize_error_body("   "), "(empty response)");
+    }
+
+    #[test]
+    fn test_sanitize_error_body_html() {
+        let html =
+            r#"<!DOCTYPE html><html><head><title>Not Found</title></head><body>...</body></html>"#;
+        assert_eq!(sanitize_error_body(html), "Not Found");
+    }
+
+    #[test]
+    fn test_sanitize_error_body_html_no_title() {
+        let html = r#"<!DOCTYPE html><html><body>Error page</body></html>"#;
+        assert_eq!(
+            sanitize_error_body(html),
+            "Server returned an HTML error page"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_error_body_json_error() {
+        let json = r#"{"error": "Invalid request"}"#;
+        assert_eq!(sanitize_error_body(json), "Invalid request");
+    }
+
+    #[test]
+    fn test_sanitize_error_body_json_message() {
+        let json = r#"{"message": "Something went wrong"}"#;
+        assert_eq!(sanitize_error_body(json), "Something went wrong");
+    }
+
+    #[test]
+    fn test_sanitize_error_body_plain_text() {
+        let text = "Connection refused";
+        assert_eq!(sanitize_error_body(text), "Connection refused");
+    }
+
+    #[test]
+    fn test_sanitize_error_body_truncates_long_text() {
+        let long_text = "x".repeat(300);
+        let result = sanitize_error_body(&long_text);
+        assert!(result.ends_with("..."));
+        assert!(result.len() < 210);
     }
 }
