@@ -8,7 +8,7 @@ use chat_to_map_desktop::{
     export::{export_chats, ExportProgress},
     list_chats as lib_list_chats,
     screenshot::{capture_window, ScreenshotConfig},
-    upload::{create_job, get_presigned_url, get_results_url, upload_file},
+    upload::{complete_upload, get_presigned_url, get_results_url, upload_file},
     ChatInfo,
 };
 use clap::Parser;
@@ -138,16 +138,12 @@ async fn export_and_upload(
     .await
     .map_err(|e| format!("Upload failed: {e}"))?;
 
-    // Stage 4: Create job (90-95%)
-    emit("Processing", 90, "Creating processing job...");
+    // Stage 4: Complete upload and start processing (90-95%)
+    emit("Processing", 90, "Starting processing...");
 
-    let job_response = create_job(
-        &presign_response.file_key,
-        export_result.chat_count,
-        export_result.total_messages,
-    )
-    .await
-    .map_err(|e| format!("Failed to create job: {e}"))?;
+    let job_response = complete_upload(&presign_response.job_id)
+        .await
+        .map_err(|e| format!("Failed to start processing: {e}"))?;
 
     // Stage 5: Complete (95-100%)
     let results_url = get_results_url(&job_response.job_id);

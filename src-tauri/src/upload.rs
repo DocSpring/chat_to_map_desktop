@@ -13,28 +13,43 @@ use serde::{Deserialize, Serialize};
 // Types
 // =============================================================================
 
-/// Response from the pre-sign endpoint
+/// Generic API response wrapper
 #[derive(Debug, Deserialize)]
+struct ApiResponse<T> {
+    success: bool,
+    data: Option<T>,
+    error: Option<String>,
+}
+
+/// Data from the pre-sign endpoint
+#[derive(Debug, Deserialize)]
+struct PresignData {
+    upload_url: String,
+    job_id: String,
+}
+
+/// Public presign response (flattened for caller convenience)
+#[derive(Debug)]
 pub struct PresignResponse {
-    /// Pre-signed upload URL
     pub upload_url: String,
-    /// Job ID for tracking
     pub job_id: String,
-    /// File key in storage
-    pub file_key: String,
 }
 
-/// Request to create a job
+/// Request to complete upload
 #[derive(Debug, Serialize)]
-struct CreateJobRequest {
-    file_key: String,
-    source: String,
-    chat_count: usize,
-    message_count: usize,
+struct CompleteUploadRequest {
+    job_id: String,
 }
 
-/// Response from the create job endpoint
+/// Data from the complete endpoint
 #[derive(Debug, Deserialize)]
+struct CompleteData {
+    job_id: String,
+    status: String,
+}
+
+/// Public complete response
+#[derive(Debug)]
 pub struct CreateJobResponse {
     pub job_id: String,
     pub status: String,
@@ -61,11 +76,12 @@ pub const SERVER_BASE_URL: &str = "https://chattomap.com";
 /// Request a pre-signed upload URL from the server
 pub async fn get_presigned_url() -> Result<PresignResponse, String> {
     let client = Client::new();
-    let url = format!("{}/api/desktop/presign", SERVER_BASE_URL);
+    let url = format!("{}/api/upload/presign", SERVER_BASE_URL);
 
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
+        .body("{}")
         .send()
         .await
         .map_err(|e| format!("Failed to request presigned URL: {e}"))?;
@@ -80,10 +96,25 @@ pub async fn get_presigned_url() -> Result<PresignResponse, String> {
         ));
     }
 
-    response
-        .json::<PresignResponse>()
+    let api_response: ApiResponse<PresignData> = response
+        .json()
         .await
-        .map_err(|e| format!("Failed to parse presign response: {e}"))
+        .map_err(|e| format!("Failed to parse presign response: {e}"))?;
+
+    if !api_response.success {
+        return Err(api_response
+            .error
+            .unwrap_or_else(|| "Unknown error".to_string()));
+    }
+
+    let data = api_response
+        .data
+        .ok_or("Missing data in presign response")?;
+
+    Ok(PresignResponse {
+        upload_url: data.upload_url,
+        job_id: data.job_id,
+    })
 }
 
 /// Upload a file to the pre-signed URL
@@ -135,20 +166,13 @@ pub async fn upload_file(
     Ok(())
 }
 
-/// Notify server that upload is complete and create processing job
-pub async fn create_job(
-    file_key: &str,
-    chat_count: usize,
-    message_count: usize,
-) -> Result<CreateJobResponse, String> {
+/// Notify server that upload is complete and start processing
+pub async fn complete_upload(job_id: &str) -> Result<CreateJobResponse, String> {
     let client = Client::new();
-    let url = format!("{}/api/desktop/job", SERVER_BASE_URL);
+    let url = format!("{}/api/upload/complete", SERVER_BASE_URL);
 
-    let request = CreateJobRequest {
-        file_key: file_key.to_string(),
-        source: "imessage".to_string(),
-        chat_count,
-        message_count,
+    let request = CompleteUploadRequest {
+        job_id: job_id.to_string(),
     };
 
     let response = client
@@ -156,22 +180,37 @@ pub async fn create_job(
         .json(&request)
         .send()
         .await
-        .map_err(|e| format!("Failed to create job: {e}"))?;
+        .map_err(|e| format!("Failed to complete upload: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         return Err(format!(
-            "Create job failed {}: {}",
+            "Complete upload failed {}: {}",
             status,
             sanitize_error_body(&body)
         ));
     }
 
-    response
-        .json::<CreateJobResponse>()
+    let api_response: ApiResponse<CompleteData> = response
+        .json()
         .await
-        .map_err(|e| format!("Failed to parse job response: {e}"))
+        .map_err(|e| format!("Failed to parse complete response: {e}"))?;
+
+    if !api_response.success {
+        return Err(api_response
+            .error
+            .unwrap_or_else(|| "Unknown error".to_string()));
+    }
+
+    let data = api_response
+        .data
+        .ok_or("Missing data in complete response")?;
+
+    Ok(CreateJobResponse {
+        job_id: data.job_id,
+        status: data.status,
+    })
 }
 
 /// Get the results page URL for a job
