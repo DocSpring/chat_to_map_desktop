@@ -1,0 +1,1151 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SvelteKit API",
+    "version": "1.0.0",
+    "description": "Auto-generated API documentation from SvelteKit endpoints"
+  },
+  "servers": [],
+  "paths": {
+    "/api/webhooks/stripe": {
+      "post": {
+        "summary": "Stripe webhook handler",
+        "description": "Handles Stripe webhook events for payment processing.\nCalled by Stripe when payment events occur.\n",
+        "tags": ["Webhooks"],
+        "security": [
+          {
+            "stripeSignature": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Stripe webhook event payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed successfully",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing signature",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Missing signature"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid signature",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Invalid signature"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upload": {
+      "post": {
+        "summary": "Direct file upload (DEPRECATED)",
+        "deprecated": true,
+        "description": "Legacy direct upload endpoint. **Use the pre-signed URL flow instead:**\n1. Request pre-signed URL from POST /api/upload/presign\n2. Upload directly to S3/R2 using the pre-signed URL\n3. Call POST /api/upload/complete to notify backend\n\nThis endpoint only works in development mode.\n",
+        "tags": ["Upload"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "WhatsApp chat export ZIP file"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Optional email for notifications"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded and processing started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": ["job_id", "status"],
+                      "properties": {
+                        "job_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "type": "string",
+                          "example": "processing"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid file or direct upload not supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Upload failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upload/presign": {
+      "post": {
+        "summary": "Generate pre-signed upload URL",
+        "description": "Creates a new job and returns a pre-signed URL for direct upload to S3/R2.\nThe client should use this URL to upload the chat export ZIP file directly,\nbypassing the backend for security.\n",
+        "tags": ["Upload"],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Optional email for notifications"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pre-signed URL generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": ["upload_url", "job_id"],
+                      "properties": {
+                        "upload_url": {
+                          "type": "string",
+                          "format": "uri",
+                          "description": "Pre-signed URL for PUT request (expires in 15 minutes)"
+                        },
+                        "job_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Job ID for tracking"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to generate upload URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upload/complete": {
+      "post": {
+        "summary": "Complete upload and start processing",
+        "description": "Called after the client has uploaded the file directly to S3/R2 using the pre-signed URL.\nVerifies the file exists, updates job status to 'processing', and triggers background processing.\n",
+        "tags": ["Upload"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["job_id"],
+                "properties": {
+                  "job_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Job ID from the presign endpoint"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upload completed and processing started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": ["job_id", "status"],
+                      "properties": {
+                        "job_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "type": "string",
+                          "example": "processing"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing job_id, wrong status, or file not found)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Processing failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/job/{id}": {
+      "get": {
+        "summary": "Get job status or results",
+        "description": "Returns the current status of a job. Optionally returns full results\nincluding suggestions when `?results=true` is passed.\n",
+        "tags": ["Jobs"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Job ID"
+          },
+          {
+            "in": "query",
+            "name": "results",
+            "schema": {
+              "type": "string",
+              "enum": ["true"]
+            },
+            "description": "Set to 'true' to include suggestions in response"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job status or results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "description": "Status response (without results)",
+                      "required": ["success", "data"],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "data": {
+                          "type": "object",
+                          "required": ["id", "status", "progress"],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "status": {
+                              "$ref": "#/components/schemas/JobStatus"
+                            },
+                            "progress": {
+                              "$ref": "#/components/schemas/ProcessingProgress"
+                            },
+                            "message_count": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "suggestion_count": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "geocoded_count": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "api_cost_cents": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "price_cents": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "error": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "description": "Results response (with results=true)",
+                      "required": ["success", "data"],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "data": {
+                          "type": "object",
+                          "required": ["id", "status", "suggestions", "is_paid", "preview_limit"],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "status": {
+                              "$ref": "#/components/schemas/JobStatus"
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Suggestion"
+                              }
+                            },
+                            "is_paid": {
+                              "type": "boolean",
+                              "description": "Whether user has paid for full results"
+                            },
+                            "preview_limit": {
+                              "type": "integer",
+                              "description": "Number of free preview items",
+                              "example": 5
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid job ID format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update job details",
+        "description": "Update job information, such as adding an email for notifications.",
+        "tags": ["Jobs"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Job ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Email for job notifications"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Job updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "email": {
+                          "type": "string",
+                          "format": "email"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/job/{id}/extend": {
+      "post": {
+        "summary": "Extend job with more messages",
+        "description": "Creates a Stripe Checkout session to process additional messages\nfor an already-paid job. Part of the progressive pricing model.\n",
+        "tags": ["Jobs", "Payments"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Job ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["additional_messages"],
+                "properties": {
+                  "additional_messages": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Number of additional messages to process"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Extension checkout created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "checkout_url",
+                        "session_id",
+                        "payment_id",
+                        "messages_to_process",
+                        "price_cents"
+                      ],
+                      "properties": {
+                        "checkout_url": {
+                          "type": "string",
+                          "format": "uri",
+                          "description": "Stripe Checkout URL"
+                        },
+                        "session_id": {
+                          "type": "string",
+                          "description": "Stripe session ID"
+                        },
+                        "payment_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Payment record ID"
+                        },
+                        "messages_to_process": {
+                          "type": "integer",
+                          "description": "Actual messages to be processed (capped at remaining)"
+                        },
+                        "price_cents": {
+                          "type": "integer",
+                          "description": "Price in cents"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or job not extendable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Checkout creation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/job/{id}/assess": {
+      "post": {
+        "summary": "Quick assessment of uploaded chat",
+        "description": "Runs a quick regex-based assessment on the uploaded chat to estimate\nthe number of activities before expensive AI processing.\n",
+        "tags": ["Jobs"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Job ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assessment completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "messageCount",
+                        "estimatedActivities",
+                        "worthProcessing",
+                        "estimatedPriceCents",
+                        "matchBreakdown"
+                      ],
+                      "properties": {
+                        "messageCount": {
+                          "type": "integer",
+                          "description": "Total messages found in chat"
+                        },
+                        "estimatedActivities": {
+                          "type": "integer",
+                          "description": "Estimated activity count based on patterns"
+                        },
+                        "worthProcessing": {
+                          "type": "boolean",
+                          "description": "Whether there are >= 10 estimated activities"
+                        },
+                        "estimatedPriceCents": {
+                          "type": "integer",
+                          "description": "Estimated price based on message count"
+                        },
+                        "matchBreakdown": {
+                          "type": "object",
+                          "description": "Breakdown by pattern category",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or cannot assess job in current status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Assessment failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/download/{id}/{type}": {
+      "get": {
+        "summary": "Download results in specified format",
+        "description": "Generates and returns a downloadable file containing the job results.\nRequires the job to be paid or completed.\n",
+        "tags": ["Downloads"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Job ID"
+          },
+          {
+            "in": "path",
+            "name": "type",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DownloadType"
+            },
+            "description": "Download format"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File download",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Suggestion"
+                  }
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid ID or download type"
+          },
+          "403": {
+            "description": "Job not paid"
+          },
+          "404": {
+            "description": "Job not found"
+          },
+          "500": {
+            "description": "Download generation failed"
+          }
+        }
+      }
+    },
+    "/api/checkout": {
+      "post": {
+        "summary": "Create Stripe Checkout session",
+        "description": "Creates a Stripe Checkout session for the initial payment of a processed job.\nFor extending an existing job, use POST /api/job/{id}/extend instead.\n",
+        "tags": ["Payments"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["job_id"],
+                "properties": {
+                  "job_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Job ID to create checkout for"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Checkout session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": ["checkout_url", "session_id"],
+                      "properties": {
+                        "checkout_url": {
+                          "type": "string",
+                          "format": "uri",
+                          "description": "Stripe Checkout URL to redirect user to"
+                        },
+                        "session_id": {
+                          "type": "string",
+                          "description": "Stripe session ID"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing job_id, already paid, or not ready)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Checkout creation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "pending_upload",
+          "processing",
+          "preview",
+          "paid",
+          "completed",
+          "failed"
+        ],
+        "description": "Current status of a job"
+      },
+      "ProcessingMode": {
+        "type": "string",
+        "enum": ["partial", "complete"],
+        "description": "Whether job is processing all messages or a subset"
+      },
+      "ProcessingStage": {
+        "type": "string",
+        "enum": ["queued", "parsing", "extracting", "classifying", "geocoding", "complete"],
+        "description": "Current processing stage"
+      },
+      "SuggestionCategory": {
+        "type": "string",
+        "enum": [
+          "restaurant",
+          "cafe",
+          "bar",
+          "hike",
+          "beach",
+          "park",
+          "museum",
+          "attraction",
+          "hotel",
+          "trip",
+          "event",
+          "activity",
+          "errand",
+          "appointment",
+          "other"
+        ],
+        "description": "Category of the suggested activity"
+      },
+      "DownloadType": {
+        "type": "string",
+        "enum": ["csv", "excel", "json", "html", "pdf", "zip"],
+        "description": "Available download formats"
+      },
+      "ProcessingProgress": {
+        "type": "object",
+        "required": ["stage", "progress"],
+        "properties": {
+          "stage": {
+            "$ref": "#/components/schemas/ProcessingStage"
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Progress percentage (0-100)"
+          },
+          "message_count": {
+            "type": "integer",
+            "nullable": true
+          },
+          "suggestion_count": {
+            "type": "integer",
+            "nullable": true
+          },
+          "geocoded_count": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "Suggestion": {
+        "type": "object",
+        "required": ["id", "job_id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_date": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sender": {
+            "type": "string",
+            "nullable": true
+          },
+          "original_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "activity": {
+            "type": "string",
+            "nullable": true,
+            "description": "Extracted activity name"
+          },
+          "location_text": {
+            "type": "string",
+            "nullable": true,
+            "description": "Human-readable location"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1,
+            "nullable": true,
+            "description": "Geocoding confidence (0-1)"
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "activity_score": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1,
+            "nullable": true,
+            "description": "Activity vs errand score (0=errand, 1=fun activity)"
+          },
+          "category": {
+            "$ref": "#/components/schemas/SuggestionCategory"
+          }
+        }
+      },
+      "QuickAssessment": {
+        "type": "object",
+        "required": ["message_count", "estimated_suggestions", "price_cents"],
+        "properties": {
+          "message_count": {
+            "type": "integer",
+            "description": "Total messages in chat export"
+          },
+          "estimated_suggestions": {
+            "type": "integer",
+            "description": "Estimated number of suggestions"
+          },
+          "price_cents": {
+            "type": "integer",
+            "description": "Estimated price in cents"
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": ["success", "error"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          }
+        }
+      },
+      "ApiSuccess": {
+        "type": "object",
+        "required": ["success"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "stripeSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "stripe-signature",
+        "description": "Stripe webhook signature for verification"
+      }
+    }
+  }
+}

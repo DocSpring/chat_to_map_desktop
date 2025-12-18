@@ -5,6 +5,7 @@
  * the desktop app (Tauri) and the CLI debugging tool.
  */
 
+pub mod api;
 pub mod contacts;
 pub mod export;
 pub mod screenshot;

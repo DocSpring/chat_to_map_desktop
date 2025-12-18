@@ -171,6 +171,28 @@ This project follows strict quality standards:
 
 All checks must pass before committing. Git hooks enforce this automatically.
 
+---
+
+## Privacy & Telemetry
+
+This app collects anonymous usage analytics via Google Analytics to help us improve the user experience.
+
+### What We Collect
+
+- **Screen views**: Which screens you visit (permission, chat selection, progress, success, error)
+- **Funnel events**: Whether you complete the export flow, and where drop-offs occur
+- **Aggregate counts**: Number of chats loaded, number of chats selected for export
+
+### What We Do NOT Collect
+
+- **No chat content**: Your messages are never sent to analytics
+- **No personal data**: No names, phone numbers, or identifiers
+- **No contact information**: Your address book data stays on your device
+
+Analytics data helps us understand which parts of the app work well and where users encounter issues.
+
+---
+
 ## License
 
 GPL-3.0 - See [LICENSE](LICENSE) for details.

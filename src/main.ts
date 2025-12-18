@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-shell'
+import { FunnelEvents, initAnalytics, trackPageView } from './analytics'
 
 // Types matching Rust structs
 interface ChatInfo {
@@ -92,6 +93,9 @@ function showScreen(screen: HTMLElement): void {
     s.classList.add('hidden')
   }
   screen.classList.remove('hidden')
+
+  // Track page view for analytics
+  trackPageView(screen.id)
 }
 
 // Get filtered chats based on current filter
@@ -188,14 +192,19 @@ function setupEventListeners(): void {
 
   // Permission screen buttons
   elements.openSettingsBtn.addEventListener('click', async () => {
+    FunnelEvents.openedSystemPreferences()
     await invoke('open_full_disk_access_settings')
   })
 
-  elements.retryPermissionBtn.addEventListener('click', checkPermissionAndLoadChats)
+  elements.retryPermissionBtn.addEventListener('click', () => {
+    FunnelEvents.retriedPermission()
+    checkPermissionAndLoadChats()
+  })
 
   // Success screen
   elements.openResultsBtn.addEventListener('click', () => {
     if (state.lastResultsUrl) {
+      FunnelEvents.openedResults()
       open(state.lastResultsUrl)
     }
   })
@@ -212,6 +221,7 @@ async function checkPermissionAndLoadChats(): Promise<void> {
     console.log('[checkPermissionAndLoadChats] hasAccess:', hasAccess)
 
     if (!hasAccess) {
+      FunnelEvents.permissionRequired()
       showScreen(elements.permissionScreen)
       return
     }
@@ -229,6 +239,7 @@ async function loadChats(): Promise<void> {
 
   try {
     state.chats = await invoke<ChatInfo[]>('list_chats')
+    FunnelEvents.chatsLoaded(state.chats.length)
     renderChatList()
   } catch (error) {
     console.error('Error loading chats:', error)
@@ -242,6 +253,7 @@ async function handleExport(): Promise<void> {
     return
   }
 
+  FunnelEvents.exportStarted(state.selectedIds.size)
   showScreen(elements.progressScreen)
 
   try {
@@ -250,14 +262,18 @@ async function handleExport(): Promise<void> {
     })
 
     if (result.success && result.results_url) {
+      FunnelEvents.exportCompleted(result.job_id ?? 'unknown')
       state.lastResultsUrl = result.results_url
       showScreen(elements.successScreen)
       // Browser is opened by Rust side
     } else {
-      showError(result.error ?? 'Unknown error occurred')
+      const errorMsg = result.error ?? 'Unknown error occurred'
+      FunnelEvents.exportFailed(errorMsg)
+      showError(errorMsg)
     }
   } catch (error) {
     console.error('Export error:', error)
+    FunnelEvents.exportFailed(String(error))
     showError(String(error))
   }
 }
@@ -391,6 +407,9 @@ async function runScreenshotMode(config: ScreenshotConfig): Promise<void> {
 
 // Initialize
 async function init(): Promise<void> {
+  // Initialize analytics first
+  initAnalytics()
+
   setupEventListeners()
   await setupProgressListener()
 

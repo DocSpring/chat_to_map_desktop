@@ -1,51 +1,22 @@
 /*!
  * Upload functionality for ChatToMap server
  *
- * Handles pre-signed URL fetching and file upload to R2.
+ * Uses auto-generated API client from OpenAPI spec for type safety.
  */
 
 use std::{fs::File, io::Read, path::Path};
 
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use crate::api::{types, Client, ClientUploadExt};
 
 // =============================================================================
 // Types
 // =============================================================================
-
-/// Generic API response wrapper
-#[derive(Debug, Deserialize)]
-struct ApiResponse<T> {
-    success: bool,
-    data: Option<T>,
-    error: Option<String>,
-}
-
-/// Data from the pre-sign endpoint
-#[derive(Debug, Deserialize)]
-struct PresignData {
-    upload_url: String,
-    job_id: String,
-}
 
 /// Public presign response (flattened for caller convenience)
 #[derive(Debug)]
 pub struct PresignResponse {
     pub upload_url: String,
     pub job_id: String,
-}
-
-/// Request to complete upload
-#[derive(Debug, Serialize)]
-struct CompleteUploadRequest {
-    job_id: String,
-}
-
-/// Data from the complete endpoint
-#[derive(Debug, Deserialize)]
-struct CompleteData {
-    job_id: String,
-    status: String,
 }
 
 /// Public complete response
@@ -73,47 +44,30 @@ pub const SERVER_BASE_URL: &str = "https://chattomap.com";
 // Upload Implementation
 // =============================================================================
 
+/// Create API client
+fn create_client() -> Client {
+    Client::new(SERVER_BASE_URL)
+}
+
 /// Request a pre-signed upload URL from the server
 pub async fn get_presigned_url() -> Result<PresignResponse, String> {
-    let client = Client::new();
-    let url = format!("{}/api/upload/presign", SERVER_BASE_URL);
+    let client = create_client();
 
     let response = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .body("{}")
+        .upload_presign()
         .send()
         .await
         .map_err(|e| format!("Failed to request presigned URL: {e}"))?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "Server error {}: {}",
-            status,
-            sanitize_error_body(&body)
-        ));
+    let body = response.into_inner();
+
+    if !body.success {
+        return Err("Server returned success=false".to_string());
     }
-
-    let api_response: ApiResponse<PresignData> = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse presign response: {e}"))?;
-
-    if !api_response.success {
-        return Err(api_response
-            .error
-            .unwrap_or_else(|| "Unknown error".to_string()));
-    }
-
-    let data = api_response
-        .data
-        .ok_or("Missing data in presign response")?;
 
     Ok(PresignResponse {
-        upload_url: data.upload_url,
-        job_id: data.job_id,
+        upload_url: body.data.upload_url,
+        job_id: body.data.job_id.to_string(),
     })
 }
 
@@ -138,11 +92,11 @@ pub async fn upload_file(
         .map_err(|e| format!("Failed to read zip file: {e}"))?;
 
     let file_size = buffer.len();
-    emit_progress(10, format!("Uploading {} bytes...", format_size(file_size)));
+    emit_progress(10, format!("Uploading {}...", format_size(file_size)));
 
-    // Upload to pre-signed URL
-    let client = Client::new();
-    let response = client
+    // Upload to pre-signed URL (direct to S3/R2, not through API client)
+    let http_client = reqwest::Client::new();
+    let response = http_client
         .put(upload_url)
         .header("Content-Type", "application/zip")
         .header("Content-Length", file_size)
@@ -168,48 +122,26 @@ pub async fn upload_file(
 
 /// Notify server that upload is complete and start processing
 pub async fn complete_upload(job_id: &str) -> Result<CreateJobResponse, String> {
-    let client = Client::new();
-    let url = format!("{}/api/upload/complete", SERVER_BASE_URL);
-
-    let request = CompleteUploadRequest {
-        job_id: job_id.to_string(),
-    };
+    let client = create_client();
 
     let response = client
-        .post(&url)
-        .json(&request)
+        .upload_complete()
+        .body(types::UploadCompleteBody {
+            job_id: job_id.parse().map_err(|e| format!("Invalid job_id: {e}"))?,
+        })
         .send()
         .await
         .map_err(|e| format!("Failed to complete upload: {e}"))?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "Complete upload failed {}: {}",
-            status,
-            sanitize_error_body(&body)
-        ));
+    let body = response.into_inner();
+
+    if !body.success {
+        return Err("Server returned success=false".to_string());
     }
-
-    let api_response: ApiResponse<CompleteData> = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse complete response: {e}"))?;
-
-    if !api_response.success {
-        return Err(api_response
-            .error
-            .unwrap_or_else(|| "Unknown error".to_string()));
-    }
-
-    let data = api_response
-        .data
-        .ok_or("Missing data in complete response")?;
 
     Ok(CreateJobResponse {
-        job_id: data.job_id,
-        status: data.status,
+        job_id: body.data.job_id.to_string(),
+        status: body.data.status,
     })
 }
 
