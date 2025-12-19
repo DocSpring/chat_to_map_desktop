@@ -7,14 +7,15 @@
     "beforeDevCommand": "bun run vite",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run vite build",
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "features": ["desktop"]
   },
   "app": {
     "windows": [
       {
         "title": "ChatToMap - Export iMessage",
         "width": 600,
-        "height": 700,
+        "height": 800,
         "resizable": true,
         "minWidth": 400,
         "minHeight": 500,

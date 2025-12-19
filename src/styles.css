@@ -126,7 +126,18 @@ main {
 .icon {
   font-size: 48px;
   text-align: center;
-  margin-bottom: 8px;
+  margin-bottom: 0;
+}
+
+/* Error screen */
+#error-screen {
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+#retry-btn {
+  margin-top: 20px;
 }
 
 /* Permission screen styles */
