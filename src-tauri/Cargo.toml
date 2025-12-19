@@ -57,10 +57,12 @@ required-features = ["desktop"]
 [[bin]]
 name = "ctm-cli"
 path = "src/cli.rs"
+required-features = ["cli"]
 
 [features]
 default = ["desktop"]
 desktop = ["tauri", "tauri-plugin-shell", "tauri-plugin-dialog", "tauri/custom-protocol"]
+cli = []
 # Use local dev server instead of production
 dev-server = []
 

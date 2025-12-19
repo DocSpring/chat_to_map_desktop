@@ -93,8 +93,8 @@ This runs: typecheck, lint, rust-lint, duplication check, file-length check, and
 A command-line tool is available for debugging and testing:
 
 ```bash
-# Build the CLI
-cd src-tauri && cargo build --bin ctm-cli
+# Build the CLI (requires --features cli)
+cd src-tauri && cargo build --bin ctm-cli --features cli
 
 # List all chats
 ./target/debug/ctm-cli list-chats
@@ -154,8 +154,9 @@ chat_to_map_desktop/
 
 | Flag | Effect |
 |------|--------|
-| `dev-server` | Points to `localhost:5173` instead of `chattomap.com` |
 | `desktop` | Enables Tauri GUI (default) |
+| `dev-server` | Points to `localhost:5173` instead of `chattomap.com` |
+| `cli` | Enables the `ctm-cli` binary for debugging (not included in release builds) |
 
 ---
 
