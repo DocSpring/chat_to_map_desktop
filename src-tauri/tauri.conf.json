@@ -41,7 +41,11 @@
       "exceptionDomain": "",
       "frameworks": [],
       "providerShortName": null,
-      "signingIdentity": null
+      "signingIdentity": null,
+      "dmg": {
+        "appPosition": { "x": 200, "y": 200 },
+        "windowSize": { "width": 400, "height": 300 }
+      }
     },
     "windows": {
       "certificateThumbprint": null,

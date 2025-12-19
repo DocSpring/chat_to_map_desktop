@@ -106,7 +106,7 @@ jobs:
 
             **macOS:**
             1. Download `ChatToMap_*.dmg`
-            2. Open the DMG and drag ChatToMap to Applications
+            2. Open the DMG and double-click ChatToMap to run
             3. Right-click and select "Open" the first time (required for unsigned apps)
 
             **Windows:**
