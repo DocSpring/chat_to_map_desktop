@@ -1,0 +1,155 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  checks: read
+
+jobs:
+  wait-for-ci:
+    name: Wait for CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Wait for CI checks
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const script = require('./.github/wait-for-checks.js');
+            await script({ github, context, core });
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: wait-for-ci
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS builds (Intel + Apple Silicon universal binary)
+          - platform: macos-latest
+            target: universal-apple-darwin
+            args: "--target universal-apple-darwin"
+            name: macos
+
+          # Windows build
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+            name: windows
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-release-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Disable signing for now (Phase 2 - unsigned builds)
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ChatToMap v__VERSION__"
+          releaseBody: |
+            ## ChatToMap Desktop v__VERSION__
+
+            Export your iMessage history and discover all the places you've talked about!
+
+            ### Installation
+
+            **macOS:**
+            1. Download `ChatToMap_*.dmg`
+            2. Open the DMG and drag ChatToMap to Applications
+            3. Right-click and select "Open" the first time (required for unsigned apps)
+
+            **Windows:**
+            1. Download `ChatToMap_*_x64-setup.exe`
+            2. Run the installer
+            3. You may need to click "More info" → "Run anyway" (unsigned app warning)
+
+            ---
+            **Note:** These are unsigned builds. Code signing and notarization coming in a future release.
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ matrix.args }}
+
+      - name: Generate checksums (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          cd src-tauri/target/universal-apple-darwin/release/bundle/dmg
+          for file in *.dmg; do
+            shasum -a 256 "$file" > "${file}.sha256"
+            echo "Generated checksum for $file"
+          done
+
+      - name: Generate checksums (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe"
+          foreach ($file in $files) {
+            $hash = Get-FileHash -Path $file.FullName -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $($file.Name)" | Out-File -FilePath "$($file.FullName).sha256" -Encoding ASCII
+            Write-Host "Generated checksum for $($file.Name)"
+          }
+
+      - name: Upload checksums (macOS)
+        if: matrix.platform == 'macos-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.sha256
+          tag_name: ${{ github.ref_name }}
+
+      - name: Upload checksums (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/release/bundle/nsis/*.sha256
+          tag_name: ${{ github.ref_name }}
