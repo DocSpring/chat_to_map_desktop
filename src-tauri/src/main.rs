@@ -232,6 +232,54 @@ fn open_full_disk_access_settings() -> Result<(), String> {
     Ok(())
 }
 
+/// Check if Contacts access is granted (macOS)
+#[tauri::command]
+fn check_contacts_access() -> Result<bool, String> {
+    eprintln!("[check_contacts_access] Checking...");
+
+    #[cfg(target_os = "macos")]
+    {
+        use chat_to_map_desktop::contacts::ContactsIndex;
+
+        // Try to build the contacts index - this will fail without Contacts permission
+        match ContactsIndex::build(None) {
+            Ok(index) => {
+                let has_contacts = !index.is_empty();
+                eprintln!(
+                    "[check_contacts_access] Contacts access granted, {} entries",
+                    index.len()
+                );
+                // If the index is empty, it might mean no permission OR no contacts
+                // We return true if we could read the database (even if empty)
+                Ok(has_contacts || index.is_empty())
+            }
+            Err(e) => {
+                eprintln!("[check_contacts_access] Contacts access denied: {:?}", e);
+                Ok(false)
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // On non-macOS platforms, contacts aren't available
+        Ok(false)
+    }
+}
+
+/// Open System Preferences to Contacts (macOS)
+#[tauri::command]
+fn open_contacts_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts")
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Screenshot mode config returned to frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScreenshotConfigResponse {
@@ -350,6 +398,8 @@ fn main() {
             export_and_upload,
             check_full_disk_access,
             open_full_disk_access_settings,
+            check_contacts_access,
+            open_contacts_settings,
             get_screenshot_config,
             take_screenshot,
             open_licenses,

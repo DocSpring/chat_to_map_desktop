@@ -202,11 +202,98 @@ main {
 }
 
 .permission-note {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border);
-  font-size: 13px;
+  margin-top: 8px;
+  font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+/* Permission cards */
+.permission-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.permission-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.permission-card-status {
+  flex-shrink: 0;
+}
+
+.status-icon {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.status-pending {
+  color: var(--color-text-secondary);
+}
+
+.status-granted {
+  color: var(--color-success);
+}
+
+.status-denied {
+  color: var(--color-error);
+}
+
+.permission-card-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.permission-card-title h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.permission-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.permission-badge.required {
+  background: var(--color-error);
+  color: white;
+}
+
+.permission-badge.recommended {
+  background: var(--color-primary);
+  color: white;
+}
+
+.permission-card-body {
+  margin-bottom: 8px;
+}
+
+.permission-card-body p {
+  font-size: 13px;
+  margin: 0 0 4px 0;
+}
+
+.permission-card-body code {
+  background: var(--color-bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+
+.permission-card-action {
+  text-align: right;
 }
 
 .permission-steps {

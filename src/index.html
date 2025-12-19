@@ -19,15 +19,55 @@
         <div id="permission-screen" class="screen hidden">
           <div class="permission-header">
             <div class="icon">🔒</div>
-            <h2>Messages Data Permission</h2>
+            <h2>App Permissions</h2>
           </div>
 
           <div class="permission-explanation">
-            <div class="permission-section">
-              <h3>What we need access to:</h3>
-              <div class="permission-item permission-yes">
-                <span class="permission-icon">✓</span>
-                <span><code>~/Library/Messages/chat.db</code> — your iMessage database</span>
+            <!-- Permission 1: Full Disk Access (Required) -->
+            <div class="permission-card" id="fda-permission-card">
+              <div class="permission-card-header">
+                <div class="permission-card-status" id="fda-status">
+                  <span class="status-icon status-pending">○</span>
+                </div>
+                <div class="permission-card-title">
+                  <h3>Full Disk Access</h3>
+                  <span class="permission-badge required">Required</span>
+                </div>
+              </div>
+              <div class="permission-card-body">
+                <p>Access to <code>~/Library/Messages/chat.db</code> — your iMessage database</p>
+                <div class="permission-note">
+                  Apple protects Messages. This is the only way to read it — even Beeper requires it.
+                </div>
+              </div>
+              <div class="permission-card-action">
+                <button id="open-fda-settings-btn" class="btn btn-secondary btn-small">
+                  Open Settings
+                </button>
+              </div>
+            </div>
+
+            <!-- Permission 2: Contacts (Recommended) -->
+            <div class="permission-card" id="contacts-permission-card">
+              <div class="permission-card-header">
+                <div class="permission-card-status" id="contacts-status">
+                  <span class="status-icon status-pending">○</span>
+                </div>
+                <div class="permission-card-title">
+                  <h3>Contacts</h3>
+                  <span class="permission-badge recommended">Recommended</span>
+                </div>
+              </div>
+              <div class="permission-card-body">
+                <p>Display names instead of phone numbers</p>
+                <div class="permission-note">
+                  Without this, chats will show as "+1 (555) 123-4567" instead of "John Smith".
+                </div>
+              </div>
+              <div class="permission-card-action">
+                <button id="open-contacts-settings-btn" class="btn btn-secondary btn-small">
+                  Open Settings
+                </button>
               </div>
             </div>
 
@@ -42,30 +82,18 @@
                 <span>Attachments or media from your chats</span>
               </div>
             </div>
-
-            <div class="permission-note">
-              <strong>Why Full Disk Access?</strong> Apple protects your Messages
-              folder. This is the only way for apps to read it — even Beeper and
-              other iMessage tools require it.
-            </div>
           </div>
 
           <div class="permission-steps">
-            <h3>How to enable:</h3>
+            <h3>After enabling permissions:</h3>
             <ol>
-              <li>Click "Open Privacy Settings" below</li>
-              <li>Find <strong>ChatToMap</strong> in the list</li>
-              <li>Toggle it <strong>ON</strong></li>
-              <li><strong>Quit and reopen</strong> this app</li>
+              <li><strong>Quit and reopen</strong> this app for changes to take effect</li>
             </ol>
           </div>
 
           <div class="permission-actions">
-            <button id="open-settings-btn" class="btn btn-primary btn-large">
-              Open Privacy Settings
-            </button>
-            <button id="retry-permission-btn" class="btn btn-secondary">
-              I've enabled it — Check Again
+            <button id="retry-permission-btn" class="btn btn-primary btn-large">
+              Check Permissions
             </button>
             <button id="select-db-btn" class="btn btn-link">
               Or select a copied chat.db file manually

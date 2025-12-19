@@ -3,36 +3,8 @@ import { listen } from '@tauri-apps/api/event'
 import { open as openPath } from '@tauri-apps/plugin-dialog'
 import { open as openShell } from '@tauri-apps/plugin-shell'
 import { FunnelEvents, initAnalytics, trackPageView } from './analytics'
-
-// Types matching Rust structs
-interface ChatInfo {
-  id: number
-  display_name: string
-  chat_identifier: string
-  service: string
-  participant_count: number
-  message_count: number
-}
-
-interface ExportProgress {
-  stage: string
-  percent: number
-  message: string
-}
-
-interface ExportResult {
-  success: boolean
-  job_id: string | null
-  results_url: string | null
-  error: string | null
-}
-
-interface ScreenshotConfig {
-  enabled: boolean
-  theme: string
-  force_no_fda: boolean
-  output_dir: string
-}
+import { runScreenshotMode } from './screenshot'
+import type { ChatInfo, ExportProgress, ExportResult, ScreenshotConfig } from './types'
 
 // State
 const state = {
@@ -68,7 +40,11 @@ const elements = {
   selectNoneBtn: getElement<HTMLButtonElement>('select-none-btn'),
   exportBtn: getElement<HTMLButtonElement>('export-btn'),
 
-  openSettingsBtn: getElement<HTMLButtonElement>('open-settings-btn'),
+  // Permission screen elements
+  fdaStatus: getElement<HTMLElement>('fda-status'),
+  contactsStatus: getElement<HTMLElement>('contacts-status'),
+  openFdaSettingsBtn: getElement<HTMLButtonElement>('open-fda-settings-btn'),
+  openContactsSettingsBtn: getElement<HTMLButtonElement>('open-contacts-settings-btn'),
   retryPermissionBtn: getElement<HTMLButtonElement>('retry-permission-btn'),
   selectDbBtn: getElement<HTMLButtonElement>('select-db-btn'),
 
@@ -194,9 +170,13 @@ function setupEventListeners(): void {
   elements.exportBtn.addEventListener('click', handleExport)
 
   // Permission screen buttons
-  elements.openSettingsBtn.addEventListener('click', async () => {
+  elements.openFdaSettingsBtn.addEventListener('click', async () => {
     FunnelEvents.openedSystemPreferences()
     await invoke('open_full_disk_access_settings')
+  })
+
+  elements.openContactsSettingsBtn.addEventListener('click', async () => {
+    await invoke('open_contacts_settings')
   })
 
   elements.retryPermissionBtn.addEventListener('click', () => {
@@ -254,19 +234,50 @@ async function handleSelectCustomDb(): Promise<void> {
   }
 }
 
+// Update permission status indicators in the UI
+function updatePermissionStatus(element: HTMLElement, granted: boolean | null): void {
+  const icon = element.querySelector('.status-icon')
+  if (!icon) return
+
+  icon.classList.remove('status-pending', 'status-granted', 'status-denied')
+  if (granted === null) {
+    icon.classList.add('status-pending')
+    icon.textContent = '○'
+  } else if (granted) {
+    icon.classList.add('status-granted')
+    icon.textContent = '✓'
+  } else {
+    icon.classList.add('status-denied')
+    icon.textContent = '✗'
+  }
+}
+
 async function checkPermissionAndLoadChats(): Promise<void> {
   console.log('[checkPermissionAndLoadChats] Starting...')
   try {
+    // Check Full Disk Access
     console.log('[checkPermissionAndLoadChats] Invoking check_full_disk_access...')
-    const hasAccess = await invoke<boolean>('check_full_disk_access')
-    console.log('[checkPermissionAndLoadChats] hasAccess:', hasAccess)
+    const hasFdaAccess = await invoke<boolean>('check_full_disk_access')
+    console.log('[checkPermissionAndLoadChats] hasFdaAccess:', hasFdaAccess)
 
-    if (!hasAccess) {
+    // Check Contacts access
+    console.log('[checkPermissionAndLoadChats] Invoking check_contacts_access...')
+    const hasContactsAccess = await invoke<boolean>('check_contacts_access')
+    console.log('[checkPermissionAndLoadChats] hasContactsAccess:', hasContactsAccess)
+
+    // Update permission status UI
+    updatePermissionStatus(elements.fdaStatus, hasFdaAccess)
+    updatePermissionStatus(elements.contactsStatus, hasContactsAccess)
+
+    // FDA is required - if not granted, show permission screen
+    if (!hasFdaAccess) {
       FunnelEvents.permissionRequired()
       showScreen(elements.permissionScreen)
       return
     }
 
+    // FDA granted - proceed to chat selection
+    // (Contacts is optional - app works without it, just shows phone numbers)
     showScreen(elements.chatSelectionScreen)
     await loadChats()
   } catch (error) {
@@ -337,131 +348,21 @@ async function setupProgressListener(): Promise<void> {
   })
 }
 
-// Mock data for screenshot mode
-function getMockChats(): ChatInfo[] {
-  return [
-    {
-      id: 1,
-      display_name: 'Alice Johnson',
-      chat_identifier: '+15551234567',
-      service: 'iMessage',
-      participant_count: 1,
-      message_count: 1542
-    },
-    {
-      id: 2,
-      display_name: 'Travel Planning Group',
-      chat_identifier: 'chat123',
-      service: 'iMessage',
-      participant_count: 5,
-      message_count: 823
-    },
-    {
-      id: 3,
-      display_name: 'Bob Williams',
-      chat_identifier: '+15559876543',
-      service: 'iMessage',
-      participant_count: 1,
-      message_count: 456
-    }
-  ]
-}
-
-// Screenshot mode functions
-function setTheme(theme: string): void {
-  if (theme === 'light' || theme === 'dark') {
-    document.documentElement.setAttribute('data-theme', theme)
-  } else {
-    // 'system' - remove attribute to use system preference
-    document.documentElement.removeAttribute('data-theme')
-  }
-}
-
-async function takeScreenshot(filename: string): Promise<void> {
-  // Small delay to ensure rendering is complete
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  const path = await invoke<string>('take_screenshot', { filename })
-  console.log(`Screenshot saved: ${path}`)
-}
-
-async function runScreenshotMode(config: ScreenshotConfig): Promise<void> {
-  console.log('Running screenshot mode...')
-  console.log('Config:', config)
-
-  // Set theme
-  setTheme(config.theme)
-
-  // Determine theme suffix for filenames
-  const themeSuffix = config.theme === 'system' ? 'system' : config.theme
-
-  // Screen 1: Permission screen (if force_no_fda)
-  if (config.force_no_fda) {
-    showScreen(elements.permissionScreen)
-    await takeScreenshot(`01-permission-${themeSuffix}.png`)
-  }
-
-  // Screen 2: Chat selection with chats loaded
-  showScreen(elements.chatSelectionScreen)
-
-  // Load real chats if we have FDA access, otherwise show mock data
-  if (!config.force_no_fda) {
-    try {
-      state.chats = await invoke<ChatInfo[]>('list_chats')
-    } catch {
-      // If loading fails, use mock data for screenshots
-      state.chats = getMockChats()
-    }
-  } else {
-    // Mock data for permission-denied screenshots
-    state.chats = getMockChats()
-  }
-
-  renderChatList()
-  await takeScreenshot(`02-chat-selection-empty-${themeSuffix}.png`)
-
-  // Select a chat
-  if (state.chats.length > 0) {
-    state.selectedIds.add(state.chats[0].id)
-    renderChatList()
-    await takeScreenshot(`03-chat-selection-selected-${themeSuffix}.png`)
-  }
-
-  // Screen 3: Progress screen
-  showScreen(elements.progressScreen)
-  elements.progressStage.textContent = 'Exporting'
-  elements.progressFill.style.width = '35%'
-  elements.progressMessage.textContent = 'Exporting messages...'
-  await takeScreenshot(`04-progress-${themeSuffix}.png`)
-
-  // Screen 4: Success screen
-  showScreen(elements.successScreen)
-  await takeScreenshot(`05-success-${themeSuffix}.png`)
-
-  // Screen 5: Error screen
-  showScreen(elements.errorScreen)
-  elements.errorMessage.textContent = 'Connection failed: Unable to reach server'
-  await takeScreenshot(`06-error-${themeSuffix}.png`)
-
-  console.log('Screenshot mode complete!')
-
-  // Exit the app after screenshots
-  // Note: In Tauri, we can't easily exit from JS, so we just log completion
-  console.log('All screenshots saved. You can close the app now.')
-}
-
 // Initialize
 async function init(): Promise<void> {
-  // Initialize analytics first
   initAnalytics()
-
   setupEventListeners()
   await setupProgressListener()
 
-  // Check if we're in screenshot mode
   const config = await invoke<ScreenshotConfig>('get_screenshot_config')
 
   if (config.enabled) {
-    await runScreenshotMode(config)
+    await runScreenshotMode(config, {
+      elements,
+      state,
+      showScreen,
+      renderChatList
+    })
   } else {
     await checkPermissionAndLoadChats()
   }
