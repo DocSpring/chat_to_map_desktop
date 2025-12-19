@@ -17,18 +17,60 @@
       <main>
         <!-- Permission check (macOS) -->
         <div id="permission-screen" class="screen hidden">
-          <div class="icon">⚠️</div>
-          <h2>Permission Required</h2>
-          <p>
-            This app needs Full Disk Access to read your iMessage history. Your
-            messages are uploaded securely and deleted after processing.
-          </p>
-          <button id="open-settings-btn" class="btn btn-primary">
-            Open System Preferences
-          </button>
-          <button id="retry-permission-btn" class="btn btn-secondary">
-            Try Again
-          </button>
+          <div class="permission-header">
+            <div class="icon">🔒</div>
+            <h2>Messages Data Permission</h2>
+          </div>
+
+          <div class="permission-explanation">
+            <div class="permission-section">
+              <h3>What we need access to:</h3>
+              <div class="permission-item permission-yes">
+                <span class="permission-icon">✓</span>
+                <span><code>~/Library/Messages/chat.db</code> — your iMessage database</span>
+              </div>
+            </div>
+
+            <div class="permission-section">
+              <h3>What we do NOT access:</h3>
+              <div class="permission-item permission-no">
+                <span class="permission-icon">✗</span>
+                <span>Photos, documents, or any other files</span>
+              </div>
+              <div class="permission-item permission-no">
+                <span class="permission-icon">✗</span>
+                <span>Attachments or media from your chats</span>
+              </div>
+            </div>
+
+            <div class="permission-note">
+              <strong>Why Full Disk Access?</strong> Apple protects your Messages
+              folder. This is the only way for apps to read it — even Beeper and
+              other iMessage tools require it.
+            </div>
+          </div>
+
+          <div class="permission-steps">
+            <h3>How to enable:</h3>
+            <ol>
+              <li>Click "Open Privacy Settings" below</li>
+              <li>Find <strong>ChatToMap</strong> in the list</li>
+              <li>Toggle it <strong>ON</strong></li>
+              <li><strong>Quit and reopen</strong> this app</li>
+            </ol>
+          </div>
+
+          <div class="permission-actions">
+            <button id="open-settings-btn" class="btn btn-primary btn-large">
+              Open Privacy Settings
+            </button>
+            <button id="retry-permission-btn" class="btn btn-secondary">
+              I've enabled it — Check Again
+            </button>
+            <button id="select-db-btn" class="btn btn-link">
+              Or select a copied chat.db file manually
+            </button>
+          </div>
         </div>
 
         <!-- Chat selection -->

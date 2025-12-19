@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { open } from '@tauri-apps/plugin-shell'
+import { open as openPath } from '@tauri-apps/plugin-dialog'
+import { open as openShell } from '@tauri-apps/plugin-shell'
 import { FunnelEvents, initAnalytics, trackPageView } from './analytics'
 
 // Types matching Rust structs
@@ -38,7 +39,8 @@ const state = {
   chats: [] as ChatInfo[],
   selectedIds: new Set<number>(),
   filter: '',
-  lastResultsUrl: null as string | null
+  lastResultsUrl: null as string | null,
+  customDbPath: null as string | null
 }
 
 // Helper to get required DOM element
@@ -68,6 +70,7 @@ const elements = {
 
   openSettingsBtn: getElement<HTMLButtonElement>('open-settings-btn'),
   retryPermissionBtn: getElement<HTMLButtonElement>('retry-permission-btn'),
+  selectDbBtn: getElement<HTMLButtonElement>('select-db-btn'),
 
   progressStage: getElement<HTMLElement>('progress-stage'),
   progressFill: getElement<HTMLElement>('progress-fill'),
@@ -201,16 +204,54 @@ function setupEventListeners(): void {
     checkPermissionAndLoadChats()
   })
 
+  elements.selectDbBtn.addEventListener('click', handleSelectCustomDb)
+
   // Success screen
   elements.openResultsBtn.addEventListener('click', () => {
     if (state.lastResultsUrl) {
       FunnelEvents.openedResults()
-      open(state.lastResultsUrl)
+      openShell(state.lastResultsUrl)
     }
   })
 
   // Error screen
   elements.retryBtn.addEventListener('click', handleExport)
+}
+
+async function handleSelectCustomDb(): Promise<void> {
+  try {
+    const selected = await openPath({
+      multiple: false,
+      directory: false,
+      filters: [
+        {
+          name: 'SQLite Database',
+          extensions: ['db', 'sqlite', 'sqlite3']
+        }
+      ],
+      title: 'Select your chat.db file'
+    })
+
+    if (selected && typeof selected === 'string') {
+      // Validate it's a chat.db file
+      const isValid = await invoke<boolean>('validate_chat_db', { path: selected })
+      if (!isValid) {
+        alert(
+          'This does not appear to be a valid iMessage database.\n\n' +
+            'The file should be named "chat.db" and contain iMessage tables.'
+        )
+        return
+      }
+
+      state.customDbPath = selected
+      FunnelEvents.selectedCustomDb()
+      showScreen(elements.chatSelectionScreen)
+      await loadChats()
+    }
+  } catch (error) {
+    console.error('Error selecting database:', error)
+    alert(`Error selecting database: ${error}`)
+  }
 }
 
 async function checkPermissionAndLoadChats(): Promise<void> {
@@ -238,7 +279,9 @@ async function loadChats(): Promise<void> {
   elements.chatList.innerHTML = '<div class="loading">Loading chats...</div>'
 
   try {
-    state.chats = await invoke<ChatInfo[]>('list_chats')
+    state.chats = await invoke<ChatInfo[]>('list_chats', {
+      customDbPath: state.customDbPath
+    })
     FunnelEvents.chatsLoaded(state.chats.length)
     renderChatList()
   } catch (error) {
@@ -258,7 +301,8 @@ async function handleExport(): Promise<void> {
 
   try {
     const result = await invoke<ExportResult>('export_and_upload', {
-      chatIds: Array.from(state.selectedIds)
+      chatIds: Array.from(state.selectedIds),
+      customDbPath: state.customDbPath
     })
 
     if (result.success && result.results_url) {

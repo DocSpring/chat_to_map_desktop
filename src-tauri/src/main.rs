@@ -9,7 +9,7 @@ use chat_to_map_desktop::{
     list_chats as lib_list_chats,
     screenshot::{capture_window, ScreenshotConfig},
     upload::{complete_upload, get_presigned_url, get_results_url, upload_file},
-    ChatInfo,
+    validate_chat_db as lib_validate_chat_db, ChatInfo,
 };
 use clap::Parser;
 use imessage_database::{tables::table::get_connection, util::dirs::default_db_path};
@@ -55,9 +55,13 @@ pub struct ExportResult {
 
 /// List available iMessage chats
 #[tauri::command]
-fn list_chats() -> Result<Vec<ChatInfo>, String> {
-    eprintln!("[tauri::list_chats] Command invoked");
-    let result = lib_list_chats();
+fn list_chats(custom_db_path: Option<String>) -> Result<Vec<ChatInfo>, String> {
+    eprintln!(
+        "[tauri::list_chats] Command invoked, custom_db_path: {:?}",
+        custom_db_path
+    );
+    let path = custom_db_path.as_ref().map(PathBuf::from);
+    let result = lib_list_chats(path.as_deref());
     eprintln!(
         "[tauri::list_chats] Result: {:?}",
         result.as_ref().map(|v| v.len())
@@ -65,10 +69,18 @@ fn list_chats() -> Result<Vec<ChatInfo>, String> {
     result
 }
 
+/// Validate that a file is a valid iMessage chat.db database
+#[tauri::command]
+fn validate_chat_db(path: String) -> bool {
+    eprintln!("[tauri::validate_chat_db] Validating: {}", path);
+    lib_validate_chat_db(&PathBuf::from(path))
+}
+
 /// Export selected chats and upload to server
 #[tauri::command]
 async fn export_and_upload(
     chat_ids: Vec<i32>,
+    custom_db_path: Option<String>,
     window: tauri::Window,
 ) -> Result<ExportResult, String> {
     // Helper to emit progress
@@ -100,11 +112,13 @@ async fn export_and_upload(
         );
     });
 
-    let export_result =
-        tokio::task::spawn_blocking(move || export_chats(&chat_ids, Some(progress_callback)))
-            .await
-            .map_err(|e| format!("Export task failed: {e}"))?
-            .map_err(|e| format!("Export failed: {e}"))?;
+    let db_path = custom_db_path.map(PathBuf::from);
+    let export_result = tokio::task::spawn_blocking(move || {
+        export_chats(&chat_ids, Some(progress_callback), db_path.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Export task failed: {e}"))?
+    .map_err(|e| format!("Export failed: {e}"))?;
 
     // Stage 2: Get pre-signed URL (50-55%)
     emit("Uploading", 50, "Preparing upload...");
@@ -329,8 +343,10 @@ fn main() {
                 }
             }
         })
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_chats,
+            validate_chat_db,
             export_and_upload,
             check_full_disk_access,
             open_full_disk_access_settings,

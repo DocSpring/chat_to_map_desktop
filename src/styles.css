@@ -129,6 +129,126 @@ main {
   margin-bottom: 8px;
 }
 
+/* Permission screen styles */
+.permission-header {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.permission-header h2 {
+  color: var(--color-text);
+  font-size: 20px;
+  margin-top: 0;
+}
+
+.permission-explanation {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.permission-section {
+  margin-bottom: 12px;
+}
+
+.permission-section:last-child {
+  margin-bottom: 0;
+}
+
+.permission-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.permission-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.permission-item:last-child {
+  margin-bottom: 0;
+}
+
+.permission-icon {
+  font-weight: bold;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+.permission-yes .permission-icon {
+  color: var(--color-success);
+}
+
+.permission-no .permission-icon {
+  color: var(--color-text-secondary);
+}
+
+.permission-item code {
+  background: var(--color-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+
+.permission-note {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.permission-steps {
+  margin-bottom: 16px;
+}
+
+.permission-steps h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.permission-steps ol {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+}
+
+.permission-steps li {
+  margin-bottom: 4px;
+}
+
+.permission-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.btn-link:hover {
+  color: var(--color-primary);
+}
+
 /* Controls */
 .controls {
   display: flex;

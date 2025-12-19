@@ -102,6 +102,9 @@ export const FunnelEvents = {
   /** User retried permission check */
   retriedPermission: () => trackEvent('funnel_retried_permission'),
 
+  /** User selected a custom chat.db file (fallback path) */
+  selectedCustomDb: () => trackEvent('funnel_selected_custom_db'),
+
   /** Chats loaded successfully */
   chatsLoaded: (count: number) => trackEvent('funnel_chats_loaded', { chat_count: count }),
 

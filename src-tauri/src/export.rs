@@ -114,6 +114,7 @@ const TIMESTAMP_FACTOR: i64 = 1_000_000_000;
 pub fn export_chats(
     chat_ids: &[i32],
     progress_callback: Option<ProgressCallback>,
+    custom_db_path: Option<&std::path::Path>,
 ) -> Result<ExportResult, String> {
     let emit_progress = |progress: ExportProgress| {
         if let Some(ref cb) = progress_callback {
@@ -128,7 +129,9 @@ pub fn export_chats(
     });
 
     // Connect to database
-    let db_path = default_db_path();
+    let db_path = custom_db_path
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(default_db_path);
     let db = get_connection(&db_path).map_err(|e| format!("Failed to connect to database: {e}"))?;
 
     // Build contacts index for name resolution

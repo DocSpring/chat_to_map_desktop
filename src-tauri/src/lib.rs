@@ -117,11 +117,14 @@ pub fn resolve_chat_display_name(
 }
 
 /// List available iMessage chats
-pub fn list_chats() -> Result<Vec<ChatInfo>, String> {
+/// If custom_db_path is provided, uses that instead of the default ~/Library/Messages/chat.db
+pub fn list_chats(custom_db_path: Option<&std::path::Path>) -> Result<Vec<ChatInfo>, String> {
     eprintln!("[list_chats] Starting...");
 
     // Get database path
-    let db_path = default_db_path();
+    let db_path = custom_db_path
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(default_db_path);
     eprintln!("[list_chats] DB path: {:?}", db_path);
 
     // Connect to database
@@ -200,4 +203,44 @@ pub fn list_chats() -> Result<Vec<ChatInfo>, String> {
 
     eprintln!("[list_chats] Done! Returning {} chats", result.len());
     Ok(result)
+}
+
+/// Validate that a file is a valid iMessage chat.db database
+/// Returns true if it can be opened and contains the expected tables
+pub fn validate_chat_db(path: &std::path::Path) -> bool {
+    eprintln!("[validate_chat_db] Validating: {:?}", path);
+
+    // Check file exists
+    if !path.exists() {
+        eprintln!("[validate_chat_db] File does not exist");
+        return false;
+    }
+
+    // Try to open as SQLite database
+    let db = match get_connection(path) {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("[validate_chat_db] Failed to open: {e}");
+            return false;
+        }
+    };
+
+    // Check for expected iMessage tables (chat, message, handle)
+    let result: Result<i64, _> = db.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('chat', 'message', 'handle')",
+        [],
+        |row| row.get(0),
+    );
+
+    match result {
+        Ok(count) => {
+            let valid = count >= 3;
+            eprintln!("[validate_chat_db] Found {count} expected tables, valid={valid}");
+            valid
+        }
+        Err(e) => {
+            eprintln!("[validate_chat_db] Query failed: {e}");
+            false
+        }
+    }
 }

@@ -75,7 +75,7 @@ fn main() {
 }
 
 fn cmd_list_chats(verbose: bool, limit: Option<usize>, filter: Option<String>, json: bool) {
-    match chat_to_map_desktop::list_chats() {
+    match chat_to_map_desktop::list_chats(None) {
         Ok(mut chats) => {
             // Apply filter if provided
             if let Some(ref filter_str) = filter {
