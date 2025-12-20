@@ -7,15 +7,17 @@ tasks:
       - task --list
 
   # === Development ===
+  # Note: --config tauri.dev.conf.json works around Tauri v2 bug where dev mode
+  # uses frontendDist instead of devUrl. See: https://github.com/tauri-apps/tauri/issues/9629
   dev:
     desc: Start Tauri dev mode (uses production API)
     cmds:
-      - cargo tauri dev
+      - cargo tauri dev --config src-tauri/tauri.dev.conf.json
 
   dev:local:
     desc: Start Tauri dev mode (uses localhost:5173 API)
     cmds:
-      - cargo tauri dev --features desktop,dev-server
+      - cargo tauri dev --config src-tauri/tauri.dev.conf.json --features desktop,dev-server
 
   build:
     desc: Build for production (points to chattomap.com)

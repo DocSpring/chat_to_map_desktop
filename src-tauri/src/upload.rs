@@ -4,7 +4,7 @@
  * Uses auto-generated API client from OpenAPI spec for type safety.
  */
 
-use std::{fs::File, io::Read, path::Path};
+use std::{collections::HashMap, fs::File, io::Read, path::Path};
 
 use crate::api::{types, Client, ClientUploadExt};
 
@@ -44,20 +44,46 @@ pub const SERVER_BASE_URL: &str = "https://chattomap.com";
 // Upload Implementation
 // =============================================================================
 
-/// Create API client
-fn create_client() -> Client {
-    Client::new(SERVER_BASE_URL)
+/// Create API client with optional host override and custom headers
+fn create_client(host_override: Option<&str>, custom_headers: &HashMap<String, String>) -> Client {
+    let base_url = host_override.unwrap_or(SERVER_BASE_URL);
+
+    if custom_headers.is_empty() {
+        return Client::new(base_url);
+    }
+
+    // Build a reqwest client with custom headers
+    let mut headers = reqwest::header::HeaderMap::new();
+    for (name, value) in custom_headers {
+        if let (Ok(header_name), Ok(header_value)) = (
+            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
+            reqwest::header::HeaderValue::from_str(value),
+        ) {
+            headers.insert(header_name, header_value);
+        }
+    }
+
+    let http_client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .unwrap_or_default();
+
+    Client::new_with_client(base_url, http_client)
 }
 
 /// Request a pre-signed upload URL from the server
-pub async fn get_presigned_url() -> Result<PresignResponse, String> {
-    let client = create_client();
+pub async fn get_presigned_url(
+    host_override: Option<&str>,
+    custom_headers: &HashMap<String, String>,
+) -> Result<PresignResponse, String> {
+    let client = create_client(host_override, custom_headers);
 
-    let response = client
-        .upload_presign()
-        .send()
-        .await
-        .map_err(|e| format!("Failed to request presigned URL: {e}"))?;
+    let response = client.upload_presign().send().await.map_err(|e| {
+        format!(
+            "Failed to request presigned URL: {}",
+            sanitize_api_error(&e)
+        )
+    })?;
 
     let body = response.into_inner();
 
@@ -121,8 +147,12 @@ pub async fn upload_file(
 }
 
 /// Notify server that upload is complete and start processing
-pub async fn complete_upload(job_id: &str) -> Result<CreateJobResponse, String> {
-    let client = create_client();
+pub async fn complete_upload(
+    job_id: &str,
+    host_override: Option<&str>,
+    custom_headers: &HashMap<String, String>,
+) -> Result<CreateJobResponse, String> {
+    let client = create_client(host_override, custom_headers);
 
     let response = client
         .upload_complete()
@@ -131,7 +161,7 @@ pub async fn complete_upload(job_id: &str) -> Result<CreateJobResponse, String> 
         })
         .send()
         .await
-        .map_err(|e| format!("Failed to complete upload: {e}"))?;
+        .map_err(|e| format!("Failed to complete upload: {}", sanitize_api_error(&e)))?;
 
     let body = response.into_inner();
 
@@ -146,13 +176,66 @@ pub async fn complete_upload(job_id: &str) -> Result<CreateJobResponse, String> 
 }
 
 /// Get the results page URL for a job
-pub fn get_results_url(job_id: &str) -> String {
-    format!("{}/processing/{}", SERVER_BASE_URL, job_id)
+pub fn get_results_url(job_id: &str, host_override: Option<&str>) -> String {
+    let base_url = host_override.unwrap_or(SERVER_BASE_URL);
+    format!("{}/processing/{}", base_url, job_id)
 }
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+/// Sanitize API client errors (from progenitor)
+/// Extracts meaningful message from potentially HTML-heavy error responses
+fn sanitize_api_error<E: std::fmt::Display>(error: &E) -> String {
+    let error_str = error.to_string();
+
+    // Check if error contains HTML
+    if error_str.contains("<!DOCTYPE")
+        || error_str.contains("<!doctype")
+        || error_str.contains("<html")
+    {
+        // Try to extract a title from the HTML
+        if let Some(title) = extract_html_title(&error_str) {
+            return clean_error_text(&title);
+        }
+        return "Server returned an HTML error page (authentication required?)".to_string();
+    }
+
+    // For shorter errors, return as-is
+    if error_str.len() <= 200 {
+        return error_str;
+    }
+
+    // Truncate long errors
+    format!("{}...", &error_str[..200])
+}
+
+/// Clean up error text - remove escaped bytes and non-ASCII characters
+fn clean_error_text(text: &str) -> String {
+    // Remove escaped byte sequences like \xe3\x83\xbb
+    let mut result = text.to_string();
+
+    // Remove \xNN patterns
+    while let Some(pos) = result.find("\\x") {
+        if pos + 4 <= result.len() {
+            result = format!("{}{}", &result[..pos], &result[pos + 4..]);
+        } else {
+            break;
+        }
+    }
+
+    // Remove any remaining non-ASCII and normalize whitespace
+    result
+        .chars()
+        .filter(|c| {
+            c.is_ascii_alphanumeric() || c.is_ascii_whitespace() || c.is_ascii_punctuation()
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 /// Sanitize an error response body for display
 ///
@@ -247,9 +330,15 @@ mod tests {
 
     #[test]
     fn test_get_results_url() {
-        let url = get_results_url("abc123");
+        let url = get_results_url("abc123", None);
         assert!(url.contains("abc123"));
         assert!(url.contains("/processing/"));
+    }
+
+    #[test]
+    fn test_get_results_url_with_override() {
+        let url = get_results_url("abc123", Some("http://localhost:5173"));
+        assert_eq!(url, "http://localhost:5173/processing/abc123");
     }
 
     #[test]

@@ -39,9 +39,13 @@ struct Args {
     output_dir: PathBuf,
 }
 
-/// App state for screenshot configuration
+/// App state for screenshot configuration and debug settings
 struct AppState {
     screenshot_config: Mutex<ScreenshotConfig>,
+    /// Override server host URL (for debugging)
+    server_host_override: Mutex<Option<String>>,
+    /// Custom headers to send with API requests (for debugging)
+    custom_headers: Mutex<std::collections::HashMap<String, String>>,
 }
 
 /// Export result returned to the frontend
@@ -81,8 +85,13 @@ fn validate_chat_db(path: String) -> bool {
 async fn export_and_upload(
     chat_ids: Vec<i32>,
     custom_db_path: Option<String>,
+    state: tauri::State<'_, AppState>,
     window: tauri::Window,
 ) -> Result<ExportResult, String> {
+    // Get the host override if set
+    let host_override = state.server_host_override.lock().unwrap().clone();
+    // Get custom headers if set
+    let custom_headers = state.custom_headers.lock().unwrap().clone();
     // Helper to emit progress
     let emit = |stage: &str, percent: u8, message: &str| {
         let _ = window.emit(
@@ -123,7 +132,7 @@ async fn export_and_upload(
     // Stage 2: Get pre-signed URL (50-55%)
     emit("Uploading", 50, "Preparing upload...");
 
-    let presign_response = get_presigned_url()
+    let presign_response = get_presigned_url(host_override.as_deref(), &custom_headers)
         .await
         .map_err(|e| format!("Failed to get upload URL: {e}"))?;
 
@@ -155,12 +164,16 @@ async fn export_and_upload(
     // Stage 4: Complete upload and start processing (90-95%)
     emit("Processing", 90, "Starting processing...");
 
-    let job_response = complete_upload(&presign_response.job_id)
-        .await
-        .map_err(|e| format!("Failed to start processing: {e}"))?;
+    let job_response = complete_upload(
+        &presign_response.job_id,
+        host_override.as_deref(),
+        &custom_headers,
+    )
+    .await
+    .map_err(|e| format!("Failed to start processing: {e}"))?;
 
     // Stage 5: Complete (95-100%)
-    let results_url = get_results_url(&job_response.job_id);
+    let results_url = get_results_url(&job_response.job_id, host_override.as_deref());
     emit("Complete", 100, "Export complete!");
 
     // Open browser to results page
@@ -328,6 +341,35 @@ fn open_licenses() -> Result<(), String> {
         .map_err(|e| format!("Failed to open URL: {e}"))
 }
 
+/// Set the server host URL override (for debugging)
+#[tauri::command]
+fn set_server_host(state: tauri::State<AppState>, host: Option<String>) {
+    let mut override_host = state.server_host_override.lock().unwrap();
+    eprintln!("[set_server_host] Setting host override to: {:?}", host);
+    *override_host = host;
+}
+
+/// Get the current server host URL (with override applied)
+#[tauri::command]
+fn get_server_host(state: tauri::State<AppState>) -> String {
+    let override_host = state.server_host_override.lock().unwrap();
+    match override_host.as_ref() {
+        Some(host) if !host.is_empty() => host.clone(),
+        _ => chat_to_map_desktop::upload::SERVER_BASE_URL.to_string(),
+    }
+}
+
+/// Set custom headers for API requests (for debugging)
+#[tauri::command]
+fn set_custom_headers(
+    state: tauri::State<AppState>,
+    headers: std::collections::HashMap<String, String>,
+) {
+    let mut custom_headers = state.custom_headers.lock().unwrap();
+    eprintln!("[set_custom_headers] Setting {} headers", headers.len());
+    *custom_headers = headers;
+}
+
 /// Take a screenshot and save it to the specified filename
 #[tauri::command]
 fn take_screenshot(state: tauri::State<AppState>, filename: String) -> Result<String, String> {
@@ -363,6 +405,8 @@ fn main() {
 
     let app_state = AppState {
         screenshot_config: Mutex::new(screenshot_config),
+        server_host_override: Mutex::new(None),
+        custom_headers: Mutex::new(std::collections::HashMap::new()),
     };
 
     tauri::Builder::default()
@@ -403,6 +447,9 @@ fn main() {
             get_screenshot_config,
             take_screenshot,
             open_licenses,
+            set_server_host,
+            get_server_host,
+            set_custom_headers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

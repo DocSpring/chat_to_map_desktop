@@ -9,10 +9,35 @@
   <body>
     <div id="app">
       <header>
-        <img src="logo.svg" alt="ChatToMap" class="header-logo" />
+        <img src="logo.svg" alt="ChatToMap" class="header-logo" id="header-logo" />
         <h1>ChatToMap</h1>
         <p class="subtitle">Export your iMessage history</p>
       </header>
+
+      <!-- Debug panel (hidden by default, activated by 5 clicks on logo) -->
+      <div id="debug-panel" class="hidden">
+        <div class="debug-header">
+          <span>Debug Settings</span>
+          <button id="debug-close-btn" class="btn-icon">&times;</button>
+        </div>
+        <div class="debug-content">
+          <label for="debug-host-input">API Host URL:</label>
+          <input type="text" id="debug-host-input" placeholder="https://chattomap.com" />
+          <div class="debug-shortcuts">
+            <a href="#" data-url="http://localhost:5173" class="debug-shortcut">dev</a>
+            <a href="#" data-url="https://staging.chattomap.com" class="debug-shortcut">staging</a>
+            <a href="#" data-url="https://chattomap.com" class="debug-shortcut">prod</a>
+          </div>
+
+          <div class="debug-headers-section">
+            <label>Custom Headers:</label>
+            <div id="debug-headers-list"></div>
+            <button type="button" id="debug-add-header-btn" class="btn btn-secondary btn-small">+ Add Header</button>
+          </div>
+
+          <button id="debug-save-btn" class="btn btn-primary btn-small">Save & Restart</button>
+        </div>
+      </div>
 
       <main>
         <!-- Permission check (macOS) -->
@@ -32,6 +57,7 @@
                 <div class="permission-card-title">
                   <h3>Full Disk Access</h3>
                   <span class="permission-badge required">Required</span>
+                  <button type="button" class="tooltip-icon" data-tippy-content="The app cannot function without this permission. Apple requires Full Disk Access to read the Messages database.">?</button>
                 </div>
               </div>
               <div class="permission-card-body">
@@ -56,6 +82,7 @@
                 <div class="permission-card-title">
                   <h3>Contacts</h3>
                   <span class="permission-badge recommended">Recommended</span>
+                  <button type="button" class="tooltip-icon" data-tippy-content="Optional. Without this, chats show phone numbers instead of contact names.">?</button>
                 </div>
               </div>
               <div class="permission-card-body">

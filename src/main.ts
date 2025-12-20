@@ -2,7 +2,10 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open as openPath } from '@tauri-apps/plugin-dialog'
 import { open as openShell } from '@tauri-apps/plugin-shell'
+import tippy from 'tippy.js'
+import 'tippy.js/dist/tippy.css'
 import { FunnelEvents, initAnalytics, trackPageView } from './analytics'
+import { initDebugSettingsOnStartup, setupDebugPanel } from './debug'
 import { runScreenshotMode } from './screenshot'
 import type { ChatInfo, ExportProgress, ExportResult, ScreenshotConfig } from './types'
 
@@ -55,7 +58,16 @@ const elements = {
   openResultsBtn: getElement<HTMLButtonElement>('open-results-btn'),
 
   errorMessage: getElement<HTMLElement>('error-message'),
-  retryBtn: getElement<HTMLButtonElement>('retry-btn')
+  retryBtn: getElement<HTMLButtonElement>('retry-btn'),
+
+  // Debug panel
+  headerLogo: getElement<HTMLImageElement>('header-logo'),
+  debugPanel: getElement<HTMLElement>('debug-panel'),
+  debugCloseBtn: getElement<HTMLButtonElement>('debug-close-btn'),
+  debugHostInput: getElement<HTMLInputElement>('debug-host-input'),
+  debugHeadersList: getElement<HTMLElement>('debug-headers-list'),
+  debugAddHeaderBtn: getElement<HTMLButtonElement>('debug-add-header-btn'),
+  debugSaveBtn: getElement<HTMLButtonElement>('debug-save-btn')
 }
 
 // Screen management
@@ -196,6 +208,9 @@ function setupEventListeners(): void {
 
   // Error screen
   elements.retryBtn.addEventListener('click', handleExport)
+
+  // Setup debug panel
+  setupDebugPanel(elements)
 }
 
 async function handleSelectCustomDb(): Promise<void> {
@@ -348,11 +363,22 @@ async function setupProgressListener(): Promise<void> {
   })
 }
 
+// Initialize tooltips
+function initTooltips(): void {
+  tippy('[data-tippy-content]', {
+    placement: 'top',
+    arrow: true,
+    theme: 'light-border'
+  })
+}
+
 // Initialize
 async function init(): Promise<void> {
   initAnalytics()
+  initTooltips()
   setupEventListeners()
   await setupProgressListener()
+  await initDebugSettingsOnStartup()
 
   const config = await invoke<ScreenshotConfig>('get_screenshot_config')
 
