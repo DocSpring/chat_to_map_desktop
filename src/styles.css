@@ -546,6 +546,19 @@ footer {
   color: var(--color-text-secondary);
 }
 
+footer .open-source-notice {
+  margin-top: 8px;
+}
+
+footer .open-source-notice a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+footer .open-source-notice a:hover {
+  text-decoration: underline;
+}
+
 /* Scrollbar styling */
 .chat-list::-webkit-scrollbar {
   width: 8px;
