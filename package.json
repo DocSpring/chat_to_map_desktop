@@ -18,6 +18,7 @@
     "@biomejs/biome": "^1.9.4",
     "@tauri-apps/cli": "^2.9.6",
     "jscpd": "^4.0.5",
+    "knip": "https://pkg.pr.new/knip@991",
     "lefthook": "^1.9.2",
     "typescript": "^5.7.2",
     "vite": "^7.3.0",

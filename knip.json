@@ -1,0 +1,7 @@
+{
+  "entry": ["src/main.ts", "src/screenshot.ts", "src/analytics.ts", "src/debug.ts"],
+  "project": ["src/**/*.ts"],
+  "ignore": ["src/**/*.test.ts", "src/**/*.spec.ts", "src/env.d.ts"],
+  "ignoreDependencies": ["@tauri-apps/cli", "@vitest/coverage-v8", "@biomejs/biome"],
+  "ignoreBinaries": ["task"]
+}

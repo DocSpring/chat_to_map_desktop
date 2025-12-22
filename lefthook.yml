@@ -23,6 +23,10 @@ pre-commit:
       glob: "*.{ts,tsx}"
       run: bunx jscpd src/
 
+    knip:
+      glob: "*.{ts,tsx}"
+      run: bunx knip
+
     file-length:
       run: ./scripts/check_file_length.sh {staged_files}
 
