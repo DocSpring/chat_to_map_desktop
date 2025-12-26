@@ -28,32 +28,55 @@ jobs:
             const script = require('./.github/wait-for-checks.cjs');
             await script({ github, context, core });
 
-  build:
-    name: Build ${{ matrix.platform }}
+  create-release:
+    name: Create Release
     needs: wait-for-ci
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # macOS builds (Intel + Apple Silicon universal binary)
-          - platform: macos-latest
-            target: universal-apple-darwin
-            args: "--target universal-apple-darwin"
-            name: macos
-
-          # Windows build
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            args: ""
-            name: windows
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          fetch-depth: 0
-          fetch-tags: true
+          tag_name: ${{ github.ref_name }}
+          name: "ChatToMap v${{ steps.version.outputs.version }}"
+          body: |
+            ## ChatToMap Desktop v${{ steps.version.outputs.version }}
+
+            Export your iMessage history and discover all the places you've talked about!
+
+            ### Download & Run
+
+            **macOS:**
+            1. Download `ChatToMap_universal.dmg`
+            2. Open the DMG and drag ChatToMap to Applications (or just double-click to run)
+            3. Right-click and select "Open" the first time (required for unsigned apps)
+
+            **Windows:**
+            1. Download `ChatToMap_x64.exe`
+            2. Run it directly - no installation needed!
+            3. You may need to click "More info" → "Run anyway" (unsigned app warning)
+            4. Delete the exe when you're done
+
+            ---
+            **Note:** These are unsigned builds. Code signing and notarization coming in a future release.
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  build-macos:
+    name: Build macOS
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -63,7 +86,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -74,82 +97,96 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             src-tauri/target/
-          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-release-
+          key: macos-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-cargo-release-
 
       - name: Cache Bun
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
+          key: macos-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: macos-bun-
 
       - name: Install dependencies
         run: bun install
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Disable signing for now (Phase 2 - unsigned builds)
-          TAURI_SIGNING_PRIVATE_KEY: ""
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "ChatToMap v__VERSION__"
-          releaseBody: |
-            ## ChatToMap Desktop v__VERSION__
+      - name: Build Tauri app (universal binary, DMG only)
+        run: bun run tauri build --target universal-apple-darwin --bundles dmg
 
-            Export your iMessage history and discover all the places you've talked about!
-
-            ### Installation
-
-            **macOS:**
-            1. Download `ChatToMap_*.dmg`
-            2. Open the DMG and double-click ChatToMap to run
-            3. Right-click and select "Open" the first time (required for unsigned apps)
-
-            **Windows:**
-            1. Download `ChatToMap_*_x64-setup.exe`
-            2. Run the installer
-            3. You may need to click "More info" → "Run anyway" (unsigned app warning)
-
-            ---
-            **Note:** These are unsigned builds. Code signing and notarization coming in a future release.
-          releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          args: ${{ matrix.args }}
-
-      - name: Generate checksums (macOS)
-        if: matrix.platform == 'macos-latest'
+      - name: Rename and checksum DMG
         run: |
           cd src-tauri/target/universal-apple-darwin/release/bundle/dmg
+          # Rename to simpler name
           for file in *.dmg; do
-            shasum -a 256 "$file" > "${file}.sha256"
-            echo "Generated checksum for $file"
+            mv "$file" "ChatToMap_universal.dmg"
+            break
           done
+          shasum -a 256 ChatToMap_universal.dmg > ChatToMap_universal.dmg.sha256
 
-      - name: Generate checksums (Windows)
-        if: matrix.platform == 'windows-latest'
+      - name: Upload macOS artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/ChatToMap_universal.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/ChatToMap_universal.dmg.sha256
+
+  build-windows:
+    name: Build Windows
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: windows-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: windows-cargo-release-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: windows-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: windows-bun-
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Tauri app (portable exe only, no installer)
+        run: bun run tauri build --no-bundle
+
+      - name: Rename and checksum exe
         shell: pwsh
         run: |
-          $files = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe"
-          foreach ($file in $files) {
-            $hash = Get-FileHash -Path $file.FullName -Algorithm SHA256
-            "$($hash.Hash.ToLower())  $($file.Name)" | Out-File -FilePath "$($file.FullName).sha256" -Encoding ASCII
-            Write-Host "Generated checksum for $($file.Name)"
-          }
+          $exePath = "src-tauri/target/release/ChatToMap.exe"
+          $newPath = "src-tauri/target/release/ChatToMap_x64.exe"
 
-      - name: Upload checksums (macOS)
-        if: matrix.platform == 'macos-latest'
+          Copy-Item -Path $exePath -Destination $newPath
+
+          $hash = Get-FileHash -Path $newPath -Algorithm SHA256
+          "$($hash.Hash.ToLower())  ChatToMap_x64.exe" | Out-File -FilePath "$newPath.sha256" -Encoding ASCII
+
+      - name: Upload Windows artifacts
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.sha256
           tag_name: ${{ github.ref_name }}
-
-      - name: Upload checksums (Windows)
-        if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: src-tauri/target/release/bundle/nsis/*.sha256
-          tag_name: ${{ github.ref_name }}
+          files: |
+            src-tauri/target/release/ChatToMap_x64.exe
+            src-tauri/target/release/ChatToMap_x64.exe.sha256
