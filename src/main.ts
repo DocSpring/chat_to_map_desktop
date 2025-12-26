@@ -213,7 +213,7 @@ function setupEventListeners(): void {
   setupDebugPanel(elements)
 
   // Handle external links (open in system browser)
-  document.querySelectorAll('a[target="_blank"]').forEach((link) => {
+  for (const link of document.querySelectorAll('a[target="_blank"]')) {
     link.addEventListener('click', (e) => {
       e.preventDefault()
       const href = (e.currentTarget as HTMLAnchorElement).href
@@ -221,7 +221,7 @@ function setupEventListeners(): void {
         openShell(href)
       }
     })
-  })
+  }
 }
 
 async function handleSelectCustomDb(): Promise<void> {
