@@ -175,7 +175,7 @@ jobs:
       - name: Rename and checksum exe
         shell: pwsh
         run: |
-          $exePath = "src-tauri/target/release/ChatToMap.exe"
+          $exePath = "src-tauri/target/release/chat-to-map-desktop.exe"
           $newPath = "src-tauri/target/release/ChatToMap_x64.exe"
 
           Copy-Item -Path $exePath -Destination $newPath
