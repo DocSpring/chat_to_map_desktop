@@ -52,21 +52,16 @@ jobs:
 
             Export your iMessage history and discover all the places you've talked about!
 
-            ### Download & Run
+            ### Download & Run (No installation needed)
 
             **macOS:**
             1. Download `ChatToMap_universal.dmg`
-            2. Open the DMG and drag ChatToMap to Applications (or just double-click to run)
-            3. Right-click and select "Open" the first time (required for unsigned apps)
+            2. Open the DMG
+            3. Double-click ChatToMap to run it
 
             **Windows:**
             1. Download `ChatToMap_x64.exe`
-            2. Run it directly - no installation needed!
-            3. You may need to click "More info" → "Run anyway" (unsigned app warning)
-            4. Delete the exe when you're done
-
-            ---
-            **Note:** These are unsigned builds. Code signing and notarization coming in a future release.
+            2. Double-click to run it
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
 
