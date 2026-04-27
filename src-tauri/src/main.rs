@@ -8,7 +8,9 @@ use chat_to_map_desktop::{
     export::{export_chats, ExportProgress},
     list_chats as lib_list_chats,
     screenshot::{capture_window, ScreenshotConfig},
-    upload::{complete_upload, get_presigned_url, get_results_url, upload_file},
+    upload::{
+        complete_upload, get_presigned_url, get_results_url, read_or_create_visitor_id, upload_file,
+    },
     validate_chat_db as lib_validate_chat_db, ChatInfo,
 };
 use clap::Parser;
@@ -48,11 +50,16 @@ struct AppState {
     custom_headers: Mutex<std::collections::HashMap<String, String>>,
 }
 
-/// Export result returned to the frontend
+/// Export result returned to the frontend.
+///
+/// `chat_analysis_id` + `job_token` are returned by Convex `uploadComplete` and
+/// together gate access to the results page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportResult {
     pub success: bool,
-    pub job_id: Option<String>,
+    pub chat_upload_id: Option<String>,
+    pub chat_analysis_id: Option<String>,
+    pub job_token: Option<String>,
     pub results_url: Option<String>,
     pub error: Option<String>,
 }
@@ -85,13 +92,23 @@ fn validate_chat_db(path: String) -> bool {
 async fn export_and_upload(
     chat_ids: Vec<i32>,
     custom_db_path: Option<String>,
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     window: tauri::Window,
 ) -> Result<ExportResult, String> {
+    use tauri::Manager;
+
     // Get the host override if set
     let host_override = state.server_host_override.lock().unwrap().clone();
     // Get custom headers if set
     let custom_headers = state.custom_headers.lock().unwrap().clone();
+    // Per-install visitor ID lives in app local data so the SaaS can reuse
+    // duplicate-upload detection for return visits.
+    let app_local_data_dir = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("Failed to resolve app local data dir: {e}"))?;
+    let visitor_id = read_or_create_visitor_id(&app_local_data_dir);
     // Helper to emit progress
     let emit = |stage: &str, percent: u8, message: &str| {
         let _ = window.emit(
@@ -132,7 +149,10 @@ async fn export_and_upload(
     // Stage 2: Get pre-signed URL (50-55%)
     emit("Uploading", 50, "Preparing upload...");
 
-    let presign_response = get_presigned_url(host_override.as_deref(), &custom_headers)
+    let zip_size = std::fs::metadata(&export_result.zip_path)
+        .map_err(|e| format!("Failed to stat export zip: {e}"))?
+        .len();
+    let presign_response = get_presigned_url(zip_size, host_override.as_deref(), &custom_headers)
         .await
         .map_err(|e| format!("Failed to get upload URL: {e}"))?;
 
@@ -153,7 +173,7 @@ async fn export_and_upload(
         );
     });
 
-    upload_file(
+    let storage_id = upload_file(
         &export_result.zip_path,
         &presign_response.upload_url,
         Some(upload_callback),
@@ -164,8 +184,16 @@ async fn export_and_upload(
     // Stage 4: Complete upload and start processing (90-95%)
     emit("Processing", 90, "Starting processing...");
 
+    let original_filename = export_result
+        .zip_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string());
+
     let job_response = complete_upload(
-        &presign_response.job_id,
+        &storage_id,
+        &visitor_id,
+        original_filename.as_deref(),
         host_override.as_deref(),
         &custom_headers,
     )
@@ -173,7 +201,11 @@ async fn export_and_upload(
     .map_err(|e| format!("Failed to start processing: {e}"))?;
 
     // Stage 5: Complete (95-100%)
-    let results_url = get_results_url(&job_response.job_id, host_override.as_deref());
+    let results_url = get_results_url(
+        &job_response.chat_analysis_id,
+        job_response.job_token.as_deref(),
+        host_override.as_deref(),
+    );
     emit("Complete", 100, "Export complete!");
 
     // Open browser to results page
@@ -183,7 +215,9 @@ async fn export_and_upload(
 
     Ok(ExportResult {
         success: true,
-        job_id: Some(job_response.job_id),
+        chat_upload_id: Some(job_response.chat_upload_id),
+        chat_analysis_id: Some(job_response.chat_analysis_id),
+        job_token: job_response.job_token,
         results_url: Some(results_url),
         error: None,
     })

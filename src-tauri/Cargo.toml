@@ -11,11 +11,6 @@ default-run = "chat-to-map-desktop"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-progenitor = "0.9"
-openapiv3 = "2"
-serde_json = "1"
-syn = "2"
-prettyplease = "0.2"
 
 [dependencies]
 tauri = { version = "2", features = [], optional = true }
@@ -36,10 +31,14 @@ rusqlite = "0.37"
 zip = "2"
 chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3"
-reqwest = { version = "0.12", features = ["json", "multipart"] }
-progenitor-client = "0.9"
+reqwest = { version = "0.12", features = ["json"] }
 uuid = { version = "1", features = ["v4"] }
 open = "5"
+
+# HMAC signing for desktop upload auth (replaces Turnstile in the desktop flow)
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
 
 # Screenshot functionality (for testing/documentation)
 xcap = "0.8"

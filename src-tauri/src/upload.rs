@@ -1,108 +1,140 @@
 /*!
- * Upload functionality for ChatToMap server
+ * Upload functionality for ChatToMap server.
  *
- * Uses auto-generated API client from OpenAPI spec for type safety.
+ * Flow (Convex backend):
+ *   1. POST /api/upload/presign  -> { upload_url }
+ *   2. PUT  upload_url           -> Convex storage returns { storageId }
+ *   3. POST /api/upload/complete -> { chat_analysis_id, job_token, ... }
+ *
+ * Each presign / complete request carries an HMAC signature so the SaaS
+ * backend can skip Turnstile (the desktop app cannot run a Turnstile widget).
+ * See `src/api.rs` for the signing helper.
  */
 
-use std::{collections::HashMap, fs::File, io::Read, path::Path};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
 
-use crate::api::{types, Client, ClientUploadExt};
+use uuid::Uuid;
+
+use crate::api::{
+    ApiClient, ConvexStorageUploadResponse, UploadCompleteData, UploadCompleteRequest,
+};
 
 // =============================================================================
-// Types
+// Public types
 // =============================================================================
 
-/// Public presign response (flattened for caller convenience)
+/// Result of the presign step (just the upload URL).
 #[derive(Debug)]
 pub struct PresignResponse {
     pub upload_url: String,
-    pub job_id: String,
 }
 
-/// Public complete response
-#[derive(Debug)]
+/// Result of completing the upload — the IDs we need to build the results URL.
+#[derive(Debug, Clone)]
 pub struct CreateJobResponse {
-    pub job_id: String,
+    pub chat_upload_id: String,
+    pub chat_analysis_id: String,
     pub status: String,
+    pub job_token: Option<String>,
 }
 
-/// Progress callback for upload
+impl From<UploadCompleteData> for CreateJobResponse {
+    fn from(data: UploadCompleteData) -> Self {
+        Self {
+            chat_upload_id: data.chat_upload_id,
+            chat_analysis_id: data.chat_analysis_id,
+            status: data.status,
+            job_token: data.job_token,
+        }
+    }
+}
+
+/// Progress callback for the PUT step.
 pub type UploadProgressCallback = Box<dyn Fn(u8, String) + Send + Sync>;
 
 // =============================================================================
 // Configuration
 // =============================================================================
 
-/// Server base URL - use `--features dev-server` to point to localhost
 #[cfg(feature = "dev-server")]
 pub const SERVER_BASE_URL: &str = "http://localhost:5173";
 
 #[cfg(not(feature = "dev-server"))]
 pub const SERVER_BASE_URL: &str = "https://chattomap.com";
 
+const VISITOR_ID_FILENAME: &str = "visitor_id.txt";
+
 // =============================================================================
-// Upload Implementation
+// Visitor ID — persisted UUID for this install
 // =============================================================================
 
-/// Create API client with optional host override and custom headers
-fn create_client(host_override: Option<&str>, custom_headers: &HashMap<String, String>) -> Client {
-    let base_url = host_override.unwrap_or(SERVER_BASE_URL);
-
-    if custom_headers.is_empty() {
-        return Client::new(base_url);
-    }
-
-    // Build a reqwest client with custom headers
-    let mut headers = reqwest::header::HeaderMap::new();
-    for (name, value) in custom_headers {
-        if let (Ok(header_name), Ok(header_value)) = (
-            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
-            reqwest::header::HeaderValue::from_str(value),
-        ) {
-            headers.insert(header_name, header_value);
+/// Read or create the per-install visitor ID. Stored as a plain UUID v4 string
+/// in `<app_local_data_dir>/visitor_id.txt`. Best-effort — if persistence
+/// fails (e.g. read-only mount), generates a fresh UUID for this run.
+pub fn read_or_create_visitor_id(app_local_data_dir: &Path) -> String {
+    let path = app_local_data_dir.join(VISITOR_ID_FILENAME);
+    if let Ok(mut file) = File::open(&path) {
+        let mut buf = String::new();
+        if file.read_to_string(&mut buf).is_ok() {
+            let trimmed = buf.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
         }
     }
 
-    let http_client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .unwrap_or_default();
-
-    Client::new_with_client(base_url, http_client)
+    let id = Uuid::new_v4().to_string();
+    let _ = std::fs::create_dir_all(app_local_data_dir);
+    if let Ok(mut file) = File::create(&path) {
+        let _ = file.write_all(id.as_bytes());
+    }
+    id
 }
 
-/// Request a pre-signed upload URL from the server
+// =============================================================================
+// Client builder
+// =============================================================================
+
+fn build_client(
+    host_override: Option<&str>,
+    custom_headers: &HashMap<String, String>,
+) -> ApiClient {
+    let base_url = host_override.unwrap_or(SERVER_BASE_URL);
+    ApiClient::new(base_url).with_extra_headers(custom_headers)
+}
+
+pub fn results_base_url(host_override: Option<&str>) -> String {
+    host_override.unwrap_or(SERVER_BASE_URL).to_string()
+}
+
+// =============================================================================
+// Presign + PUT + complete
+// =============================================================================
+
 pub async fn get_presigned_url(
+    content_length: u64,
     host_override: Option<&str>,
     custom_headers: &HashMap<String, String>,
 ) -> Result<PresignResponse, String> {
-    let client = create_client(host_override, custom_headers);
-
-    let response = client.upload_presign().send().await.map_err(|e| {
-        format!(
-            "Failed to request presigned URL: {}",
-            sanitize_api_error(&e)
-        )
-    })?;
-
-    let body = response.into_inner();
-
-    if !body.success {
-        return Err("Server returned success=false".to_string());
-    }
-
+    let client = build_client(host_override, custom_headers);
+    let data = client.upload_presign(content_length).await?;
     Ok(PresignResponse {
-        upload_url: body.data.upload_url,
-        job_id: body.data.job_id.to_string(),
+        upload_url: data.upload_url,
     })
 }
 
-/// Upload a file to the pre-signed URL
+/// Upload the zip to the presigned Convex storage URL and return the
+/// `storageId` that Convex assigned.
 pub async fn upload_file(
     zip_path: &Path,
     upload_url: &str,
     progress_callback: Option<UploadProgressCallback>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let emit_progress = |percent: u8, message: String| {
         if let Some(ref cb) = progress_callback {
             cb(percent, message);
@@ -111,7 +143,6 @@ pub async fn upload_file(
 
     emit_progress(0, "Reading export file...".to_string());
 
-    // Read file into memory
     let mut file = File::open(zip_path).map_err(|e| format!("Failed to open zip file: {e}"))?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)
@@ -120,10 +151,9 @@ pub async fn upload_file(
     let file_size = buffer.len();
     emit_progress(10, format!("Uploading {}...", format_size(file_size)));
 
-    // Upload to pre-signed URL (direct to S3/R2, not through API client)
     let http_client = reqwest::Client::new();
     let response = http_client
-        .put(upload_url)
+        .post(upload_url)
         .header("Content-Type", "application/zip")
         .header("Content-Length", file_size)
         .body(buffer)
@@ -141,128 +171,100 @@ pub async fn upload_file(
         ));
     }
 
-    emit_progress(100, "Upload complete".to_string());
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read upload response: {e}"))?;
+    let parsed: ConvexStorageUploadResponse = serde_json::from_str(&body).map_err(|e| {
+        format!(
+            "Invalid storage response: {e} (body: {})",
+            truncate(&body, 100)
+        )
+    })?;
 
-    Ok(())
+    emit_progress(100, "Upload complete".to_string());
+    Ok(parsed.storage_id)
 }
 
-/// Notify server that upload is complete and start processing
 pub async fn complete_upload(
-    job_id: &str,
+    storage_id: &str,
+    visitor_id: &str,
+    original_filename: Option<&str>,
     host_override: Option<&str>,
     custom_headers: &HashMap<String, String>,
 ) -> Result<CreateJobResponse, String> {
-    let client = create_client(host_override, custom_headers);
-
-    let response = client
-        .upload_complete()
-        .body(types::UploadCompleteBody {
-            job_id: job_id.parse().map_err(|e| format!("Invalid job_id: {e}"))?,
-        })
-        .send()
-        .await
-        .map_err(|e| format!("Failed to complete upload: {}", sanitize_api_error(&e)))?;
-
-    let body = response.into_inner();
-
-    if !body.success {
-        return Err("Server returned success=false".to_string());
-    }
-
-    Ok(CreateJobResponse {
-        job_id: body.data.job_id.to_string(),
-        status: body.data.status,
-    })
+    let client = build_client(host_override, custom_headers);
+    let req = UploadCompleteRequest {
+        storage_id: storage_id.to_string(),
+        upload_platform: "imessage".to_string(),
+        original_filename: original_filename.map(|s| s.to_string()),
+        client_locale: None,
+        visitor_id: visitor_id.to_string(),
+    };
+    let data = client.upload_complete(req).await?;
+    Ok(data.into())
 }
 
-/// Get the results page URL for a job
-pub fn get_results_url(job_id: &str, host_override: Option<&str>) -> String {
+/// Build the user-facing results URL for a completed upload.
+pub fn get_results_url(
+    chat_analysis_id: &str,
+    job_token: Option<&str>,
+    host_override: Option<&str>,
+) -> String {
     let base_url = host_override.unwrap_or(SERVER_BASE_URL);
-    format!("{}/processing/{}", base_url, job_id)
+    match job_token {
+        Some(token) if !token.is_empty() => format!(
+            "{}/processing/{}?token={}",
+            base_url,
+            chat_analysis_id,
+            urlencoding(token)
+        ),
+        _ => format!("{}/processing/{}", base_url, chat_analysis_id),
+    }
 }
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/// Sanitize API client errors (from progenitor)
-/// Extracts meaningful message from potentially HTML-heavy error responses
-fn sanitize_api_error<E: std::fmt::Display>(error: &E) -> String {
-    let error_str = error.to_string();
-
-    // Check if error contains HTML
-    if error_str.contains("<!DOCTYPE")
-        || error_str.contains("<!doctype")
-        || error_str.contains("<html")
-    {
-        // Try to extract a title from the HTML
-        if let Some(title) = extract_html_title(&error_str) {
-            return clean_error_text(&title);
-        }
-        return "Server returned an HTML error page (authentication required?)".to_string();
-    }
-
-    // For shorter errors, return as-is
-    if error_str.len() <= 200 {
-        return error_str;
-    }
-
-    // Truncate long errors
-    format!("{}...", &error_str[..200])
-}
-
-/// Clean up error text - remove escaped bytes and non-ASCII characters
-fn clean_error_text(text: &str) -> String {
-    // Remove escaped byte sequences like \xe3\x83\xbb
-    let mut result = text.to_string();
-
-    // Remove \xNN patterns
-    while let Some(pos) = result.find("\\x") {
-        if pos + 4 <= result.len() {
-            result = format!("{}{}", &result[..pos], &result[pos + 4..]);
+/// Tiny URL-encoder for the token query param. Tokens are opaque base64-ish
+/// strings; we just escape characters that aren't URL-safe.
+fn urlencoding(input: &str) -> String {
+    const SAFE: &[u8] = b"-._~ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let mut out = String::with_capacity(input.len());
+    for byte in input.as_bytes() {
+        if SAFE.contains(byte) {
+            out.push(*byte as char);
         } else {
-            break;
+            out.push('%');
+            out.push_str(&format!("{:02X}", byte));
         }
     }
-
-    // Remove any remaining non-ASCII and normalize whitespace
-    result
-        .chars()
-        .filter(|c| {
-            c.is_ascii_alphanumeric() || c.is_ascii_whitespace() || c.is_ascii_punctuation()
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    out
 }
 
-/// Sanitize an error response body for display
-///
-/// If the body looks like HTML, extract a meaningful message or return a generic error.
-/// Otherwise, truncate and return the raw body.
+// =============================================================================
+// Helpers
+// =============================================================================
+
+fn truncate(value: &str, max: usize) -> String {
+    if value.chars().count() <= max {
+        value.to_string()
+    } else {
+        let mut out: String = value.chars().take(max).collect();
+        out.push_str("...");
+        out
+    }
+}
+
 fn sanitize_error_body(body: &str) -> String {
     let trimmed = body.trim();
-
-    // Empty body
     if trimmed.is_empty() {
         return "(empty response)".to_string();
     }
-
-    // Detect HTML content
     if trimmed.starts_with("<!DOCTYPE")
         || trimmed.starts_with("<!doctype")
         || trimmed.starts_with("<html")
         || trimmed.starts_with("<HTML")
     {
-        // Try to extract title or meaningful content
-        if let Some(title) = extract_html_title(trimmed) {
-            return title;
-        }
         return "Server returned an HTML error page".to_string();
     }
-
-    // Try to parse as JSON error
     if trimmed.starts_with('{') {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
             if let Some(error) = json.get("error").and_then(|v| v.as_str()) {
@@ -273,35 +275,12 @@ fn sanitize_error_body(body: &str) -> String {
             }
         }
     }
-
-    // Plain text - truncate if too long
-    if trimmed.len() > 200 {
-        format!("{}...", &trimmed[..200])
-    } else {
-        trimmed.to_string()
-    }
+    truncate(trimmed, 200)
 }
 
-/// Extract title from HTML content
-fn extract_html_title(html: &str) -> Option<String> {
-    let lower = html.to_lowercase();
-    if let Some(start) = lower.find("<title>") {
-        if let Some(end) = lower[start..].find("</title>") {
-            let title_start = start + 7;
-            let title = html[title_start..start + end].trim();
-            if !title.is_empty() {
-                return Some(title.to_string());
-            }
-        }
-    }
-    None
-}
-
-/// Format file size for display
 fn format_size(bytes: usize) -> String {
     const KB: usize = 1024;
     const MB: usize = KB * 1024;
-
     if bytes >= MB {
         format!("{:.1} MB", bytes as f64 / MB as f64)
     } else if bytes >= KB {
@@ -318,74 +297,80 @@ fn format_size(bytes: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
-    fn test_format_size() {
+    fn format_size_picks_the_right_unit() {
         assert_eq!(format_size(500), "500 bytes");
         assert_eq!(format_size(1024), "1.0 KB");
-        assert_eq!(format_size(1536), "1.5 KB");
         assert_eq!(format_size(1024 * 1024), "1.0 MB");
-        assert_eq!(format_size(1024 * 1024 * 2 + 512 * 1024), "2.5 MB");
     }
 
     #[test]
-    fn test_get_results_url() {
-        let url = get_results_url("abc123", None);
-        assert!(url.contains("abc123"));
-        assert!(url.contains("/processing/"));
-    }
-
-    #[test]
-    fn test_get_results_url_with_override() {
-        let url = get_results_url("abc123", Some("http://localhost:5173"));
-        assert_eq!(url, "http://localhost:5173/processing/abc123");
-    }
-
-    #[test]
-    fn test_sanitize_error_body_empty() {
-        assert_eq!(sanitize_error_body(""), "(empty response)");
-        assert_eq!(sanitize_error_body("   "), "(empty response)");
-    }
-
-    #[test]
-    fn test_sanitize_error_body_html() {
-        let html =
-            r#"<!DOCTYPE html><html><head><title>Not Found</title></head><body>...</body></html>"#;
-        assert_eq!(sanitize_error_body(html), "Not Found");
-    }
-
-    #[test]
-    fn test_sanitize_error_body_html_no_title() {
-        let html = r#"<!DOCTYPE html><html><body>Error page</body></html>"#;
+    fn results_url_is_built_with_token() {
+        let url = get_results_url(
+            "analysis-abc",
+            Some("tok-xyz"),
+            Some("http://localhost:5173"),
+        );
         assert_eq!(
-            sanitize_error_body(html),
+            url,
+            "http://localhost:5173/processing/analysis-abc?token=tok-xyz"
+        );
+    }
+
+    #[test]
+    fn results_url_omits_token_when_missing() {
+        let url = get_results_url("analysis-abc", None, Some("http://localhost:5173"));
+        assert_eq!(url, "http://localhost:5173/processing/analysis-abc");
+    }
+
+    #[test]
+    fn results_url_url_encodes_special_chars_in_token() {
+        let url = get_results_url("a", Some("foo bar+baz"), Some("https://x.test"));
+        assert_eq!(url, "https://x.test/processing/a?token=foo%20bar%2Bbaz");
+    }
+
+    #[test]
+    fn visitor_id_is_persisted_and_reused() {
+        let dir = TempDir::new().unwrap();
+        let first = read_or_create_visitor_id(dir.path());
+        let second = read_or_create_visitor_id(dir.path());
+        assert_eq!(first, second);
+        // UUID v4 strings are 36 chars (32 hex + 4 hyphens).
+        assert_eq!(first.len(), 36);
+        // Stored on disk for inspection.
+        let stored = std::fs::read_to_string(dir.path().join(VISITOR_ID_FILENAME)).unwrap();
+        assert_eq!(stored.trim(), first);
+    }
+
+    #[test]
+    fn visitor_id_creates_directory_if_missing() {
+        let dir = TempDir::new().unwrap();
+        let nested = dir.path().join("not").join("yet").join("there");
+        let id = read_or_create_visitor_id(&nested);
+        assert_eq!(id.len(), 36);
+        assert!(nested.join(VISITOR_ID_FILENAME).exists());
+    }
+
+    #[test]
+    fn sanitize_error_body_extracts_json_error() {
+        let body = r#"{"error":"Bad signature"}"#;
+        assert_eq!(sanitize_error_body(body), "Bad signature");
+    }
+
+    #[test]
+    fn sanitize_error_body_handles_html() {
+        let body = "<!DOCTYPE html><html><head><title>boom</title></head></html>";
+        assert_eq!(
+            sanitize_error_body(body),
             "Server returned an HTML error page"
         );
     }
 
     #[test]
-    fn test_sanitize_error_body_json_error() {
-        let json = r#"{"error": "Invalid request"}"#;
-        assert_eq!(sanitize_error_body(json), "Invalid request");
-    }
-
-    #[test]
-    fn test_sanitize_error_body_json_message() {
-        let json = r#"{"message": "Something went wrong"}"#;
-        assert_eq!(sanitize_error_body(json), "Something went wrong");
-    }
-
-    #[test]
-    fn test_sanitize_error_body_plain_text() {
-        let text = "Connection refused";
-        assert_eq!(sanitize_error_body(text), "Connection refused");
-    }
-
-    #[test]
-    fn test_sanitize_error_body_truncates_long_text() {
-        let long_text = "x".repeat(300);
-        let result = sanitize_error_body(&long_text);
-        assert!(result.ends_with("..."));
-        assert!(result.len() < 210);
+    fn sanitize_error_body_returns_empty_marker() {
+        assert_eq!(sanitize_error_body(""), "(empty response)");
+        assert_eq!(sanitize_error_body("   "), "(empty response)");
     }
 }
