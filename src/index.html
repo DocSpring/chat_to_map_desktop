@@ -21,12 +21,16 @@
           <button id="debug-close-btn" class="btn-icon">&times;</button>
         </div>
         <div class="debug-content">
-          <label for="debug-host-input">API Host URL:</label>
+          <label for="debug-host-input">Web URL (results page):</label>
           <input type="text" id="debug-host-input" placeholder="https://chattomap.com" />
+
+          <label for="debug-api-host-input">API URL (Convex HTTP actions):</label>
+          <input type="text" id="debug-api-host-input" placeholder="https://animated-crow-936.convex.site" />
+
           <div class="debug-shortcuts">
-            <a href="#" data-url="http://localhost:5173" class="debug-shortcut">dev</a>
-            <a href="#" data-url="https://staging.chattomap.com" class="debug-shortcut">staging</a>
-            <a href="#" data-url="https://chattomap.com" class="debug-shortcut">prod</a>
+            <a href="#" class="debug-shortcut" data-web-url="http://localhost:5173" data-api-url="http://127.0.0.1:3211">dev</a>
+            <a href="#" class="debug-shortcut" data-web-url="https://staging.chattomap.com" data-api-url="https://woozy-koala-873.convex.site">staging</a>
+            <a href="#" class="debug-shortcut" data-web-url="https://chattomap.com" data-api-url="https://animated-crow-936.convex.site">prod</a>
           </div>
 
           <div class="debug-headers-section">
@@ -178,6 +182,9 @@
           <p>Your results are ready in your browser. You can close this app.</p>
           <button id="open-results-btn" class="btn btn-primary">
             Open Results Again
+          </button>
+          <button id="start-over-btn" class="btn btn-secondary">
+            Start Over
           </button>
         </div>
 

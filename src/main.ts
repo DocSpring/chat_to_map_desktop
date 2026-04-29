@@ -56,6 +56,7 @@ const elements = {
   progressMessage: getElement<HTMLElement>('progress-message'),
 
   openResultsBtn: getElement<HTMLButtonElement>('open-results-btn'),
+  startOverBtn: getElement<HTMLButtonElement>('start-over-btn'),
 
   errorMessage: getElement<HTMLElement>('error-message'),
   retryBtn: getElement<HTMLButtonElement>('retry-btn'),
@@ -65,6 +66,7 @@ const elements = {
   debugPanel: getElement<HTMLElement>('debug-panel'),
   debugCloseBtn: getElement<HTMLButtonElement>('debug-close-btn'),
   debugHostInput: getElement<HTMLInputElement>('debug-host-input'),
+  debugApiHostInput: getElement<HTMLInputElement>('debug-api-host-input'),
   debugHeadersList: getElement<HTMLElement>('debug-headers-list'),
   debugAddHeaderBtn: getElement<HTMLButtonElement>('debug-add-header-btn'),
   debugSaveBtn: getElement<HTMLButtonElement>('debug-save-btn')
@@ -204,6 +206,13 @@ function setupEventListeners(): void {
       FunnelEvents.openedResults()
       openShell(state.lastResultsUrl)
     }
+  })
+
+  elements.startOverBtn.addEventListener('click', () => {
+    state.selectedIds.clear()
+    state.lastResultsUrl = null
+    showScreen(elements.chatSelectionScreen)
+    renderChatList()
   })
 
   // Error screen

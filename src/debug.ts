@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 // Constants
 const DEBUG_HOST_KEY = 'chattomap_debug_host'
+const DEBUG_API_HOST_KEY = 'chattomap_debug_api_host'
 const DEBUG_HEADERS_KEY = 'chattomap_debug_headers'
 const CLICK_THRESHOLD = 5
 const CLICK_TIMEOUT_MS = 1000
@@ -23,6 +24,7 @@ let lastLogoClickTime = 0
 // Elements (initialized in setup)
 let debugPanel: HTMLElement
 let debugHostInput: HTMLInputElement
+let debugApiHostInput: HTMLInputElement
 let debugHeadersList: HTMLElement
 let debugAddHeaderBtn: HTMLButtonElement
 let debugSaveBtn: HTMLButtonElement
@@ -124,12 +126,19 @@ function handleLogoClick(): void {
 }
 
 async function saveDebugSettings(): Promise<void> {
-  const url = debugHostInput.value.trim()
+  const webUrl = debugHostInput.value.trim()
+  const apiUrl = debugApiHostInput.value.trim()
 
-  if (url) {
-    localStorage.setItem(DEBUG_HOST_KEY, url)
+  if (webUrl) {
+    localStorage.setItem(DEBUG_HOST_KEY, webUrl)
   } else {
     localStorage.removeItem(DEBUG_HOST_KEY)
+  }
+
+  if (apiUrl) {
+    localStorage.setItem(DEBUG_API_HOST_KEY, apiUrl)
+  } else {
+    localStorage.removeItem(DEBUG_API_HOST_KEY)
   }
 
   // Get headers and filter out empty ones
@@ -147,7 +156,8 @@ async function saveDebugSettings(): Promise<void> {
   }
 
   // Notify Rust about the new settings
-  await invoke('set_server_host', { host: url || null })
+  await invoke('set_server_host', { host: webUrl || null })
+  await invoke('set_api_host', { host: apiUrl || null })
   await invoke('set_custom_headers', { headers: headersObj })
 
   // Close panel and show confirmation
@@ -163,6 +173,7 @@ export function setupDebugPanel(elements: {
   debugPanel: HTMLElement
   debugCloseBtn: HTMLButtonElement
   debugHostInput: HTMLInputElement
+  debugApiHostInput: HTMLInputElement
   debugHeadersList: HTMLElement
   debugAddHeaderBtn: HTMLButtonElement
   debugSaveBtn: HTMLButtonElement
@@ -172,6 +183,7 @@ export function setupDebugPanel(elements: {
   debugPanel = elements.debugPanel
   debugCloseBtn = elements.debugCloseBtn
   debugHostInput = elements.debugHostInput
+  debugApiHostInput = elements.debugApiHostInput
   debugHeadersList = elements.debugHeadersList
   debugAddHeaderBtn = elements.debugAddHeaderBtn
   debugSaveBtn = elements.debugSaveBtn
@@ -186,21 +198,27 @@ export function setupDebugPanel(elements: {
 
   debugSaveBtn.addEventListener('click', saveDebugSettings)
 
-  // Debug shortcut links
+  // Debug shortcut links — each one fills BOTH the web and API URL fields
+  // so a single click flips the whole environment in one go.
   for (const link of document.querySelectorAll('.debug-shortcut')) {
     link.addEventListener('click', (e) => {
       e.preventDefault()
-      const url = (e.target as HTMLElement).dataset['url']
-      if (url) {
-        debugHostInput.value = url
-      }
+      const target = e.target as HTMLElement
+      const webUrl = target.dataset['webUrl']
+      const apiUrl = target.dataset['apiUrl']
+      if (webUrl) debugHostInput.value = webUrl
+      if (apiUrl) debugApiHostInput.value = apiUrl
     })
   }
 
-  // Initialize debug host input with saved value
+  // Initialize inputs with saved values
   const savedHost = localStorage.getItem(DEBUG_HOST_KEY)
   if (savedHost) {
     debugHostInput.value = savedHost
+  }
+  const savedApiHost = localStorage.getItem(DEBUG_API_HOST_KEY)
+  if (savedApiHost) {
+    debugApiHostInput.value = savedApiHost
   }
 
   // Initialize debug headers
@@ -213,6 +231,10 @@ export async function initDebugSettingsOnStartup(): Promise<void> {
   const savedHost = localStorage.getItem(DEBUG_HOST_KEY)
   if (savedHost) {
     await invoke('set_server_host', { host: savedHost })
+  }
+  const savedApiHost = localStorage.getItem(DEBUG_API_HOST_KEY)
+  if (savedApiHost) {
+    await invoke('set_api_host', { host: savedApiHost })
   }
 
   const savedHeaders = getDebugHeaders().filter((h) => h.name.trim() && h.value.trim())

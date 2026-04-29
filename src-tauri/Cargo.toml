@@ -40,6 +40,12 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 
+# System locale + IANA timezone detection so the desktop can send
+# `client_locale` with the upload — backend uses this to infer the user's
+# country (e.g. Pacific/Auckland → NZ).
+iana-time-zone = "0.1"
+sys-locale = "0.3"
+
 # Screenshot functionality (for testing/documentation)
 xcap = "0.8"
 image = "0.25"

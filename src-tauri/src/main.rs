@@ -41,14 +41,21 @@ struct Args {
     output_dir: PathBuf,
 }
 
-/// App state for screenshot configuration and debug settings
-struct AppState {
-    screenshot_config: Mutex<ScreenshotConfig>,
-    /// Override server host URL (for debugging)
-    server_host_override: Mutex<Option<String>>,
+/// App state for screenshot configuration and debug settings.
+///
+/// Made `pub` so the sibling `debug_commands` module (which holds the
+/// runtime override commands behind the hidden debug panel) can borrow it.
+pub struct AppState {
+    pub screenshot_config: Mutex<ScreenshotConfig>,
+    /// Override the WEB host URL (results page; chattomap.com) — debug panel only
+    pub server_host_override: Mutex<Option<String>>,
+    /// Override the API host URL (Convex HTTP actions; *.convex.site) — debug panel only
+    pub api_host_override: Mutex<Option<String>>,
     /// Custom headers to send with API requests (for debugging)
-    custom_headers: Mutex<std::collections::HashMap<String, String>>,
+    pub custom_headers: Mutex<std::collections::HashMap<String, String>>,
 }
+
+mod debug_commands;
 
 /// Export result returned to the frontend.
 ///
@@ -98,9 +105,11 @@ async fn export_and_upload(
 ) -> Result<ExportResult, String> {
     use tauri::Manager;
 
-    // Get the host override if set
-    let host_override = state.server_host_override.lock().unwrap().clone();
-    // Get custom headers if set
+    // Dev panel overrides: web host = results page (chattomap.com); api host
+    // = Convex HTTP actions (*.convex.site). Both default to compile-time
+    // constants (see upload.rs) when no override is set.
+    let web_host_override = state.server_host_override.lock().unwrap().clone();
+    let api_host_override = state.api_host_override.lock().unwrap().clone();
     let custom_headers = state.custom_headers.lock().unwrap().clone();
     // Per-install visitor ID lives in app local data so the SaaS can reuse
     // duplicate-upload detection for return visits.
@@ -152,9 +161,10 @@ async fn export_and_upload(
     let zip_size = std::fs::metadata(&export_result.zip_path)
         .map_err(|e| format!("Failed to stat export zip: {e}"))?
         .len();
-    let presign_response = get_presigned_url(zip_size, host_override.as_deref(), &custom_headers)
-        .await
-        .map_err(|e| format!("Failed to get upload URL: {e}"))?;
+    let presign_response =
+        get_presigned_url(zip_size, api_host_override.as_deref(), &custom_headers)
+            .await
+            .map_err(|e| format!("Failed to get upload URL: {e}"))?;
 
     // Stage 3: Upload file (55-90%)
     emit("Uploading", 55, "Uploading to server...");
@@ -194,7 +204,7 @@ async fn export_and_upload(
         &storage_id,
         &visitor_id,
         original_filename.as_deref(),
-        host_override.as_deref(),
+        api_host_override.as_deref(),
         &custom_headers,
     )
     .await
@@ -204,7 +214,7 @@ async fn export_and_upload(
     let results_url = get_results_url(
         &job_response.chat_analysis_id,
         job_response.job_token.as_deref(),
-        host_override.as_deref(),
+        web_host_override.as_deref(),
     );
     emit("Complete", 100, "Export complete!");
 
@@ -376,35 +386,6 @@ fn open_licenses() -> Result<(), String> {
         .map_err(|e| format!("Failed to open URL: {e}"))
 }
 
-/// Set the server host URL override (for debugging)
-#[tauri::command]
-fn set_server_host(state: tauri::State<AppState>, host: Option<String>) {
-    let mut override_host = state.server_host_override.lock().unwrap();
-    eprintln!("[set_server_host] Setting host override to: {:?}", host);
-    *override_host = host;
-}
-
-/// Get the current server host URL (with override applied)
-#[tauri::command]
-fn get_server_host(state: tauri::State<AppState>) -> String {
-    let override_host = state.server_host_override.lock().unwrap();
-    match override_host.as_ref() {
-        Some(host) if !host.is_empty() => host.clone(),
-        _ => chat_to_map_desktop::upload::SERVER_BASE_URL.to_string(),
-    }
-}
-
-/// Set custom headers for API requests (for debugging)
-#[tauri::command]
-fn set_custom_headers(
-    state: tauri::State<AppState>,
-    headers: std::collections::HashMap<String, String>,
-) {
-    let mut custom_headers = state.custom_headers.lock().unwrap();
-    eprintln!("[set_custom_headers] Setting {} headers", headers.len());
-    *custom_headers = headers;
-}
-
 /// Take a screenshot and save it to the specified filename
 #[tauri::command]
 fn take_screenshot(state: tauri::State<AppState>, filename: String) -> Result<String, String> {
@@ -441,6 +422,7 @@ fn main() {
     let app_state = AppState {
         screenshot_config: Mutex::new(screenshot_config),
         server_host_override: Mutex::new(None),
+        api_host_override: Mutex::new(None),
         custom_headers: Mutex::new(std::collections::HashMap::new()),
     };
 
@@ -482,9 +464,11 @@ fn main() {
             get_screenshot_config,
             take_screenshot,
             open_licenses,
-            set_server_host,
-            get_server_host,
-            set_custom_headers,
+            debug_commands::set_server_host,
+            debug_commands::get_server_host,
+            debug_commands::set_api_host,
+            debug_commands::get_api_host,
+            debug_commands::set_custom_headers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

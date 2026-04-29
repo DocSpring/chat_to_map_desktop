@@ -21,8 +21,23 @@ use std::{
 use uuid::Uuid;
 
 use crate::api::{
-    ApiClient, ConvexStorageUploadResponse, UploadCompleteData, UploadCompleteRequest,
+    ApiClient, ClientLocale, ConvexStorageUploadResponse, UploadCompleteData, UploadCompleteRequest,
 };
+
+// =============================================================================
+// System locale detection
+// =============================================================================
+
+/// Read the system IANA timezone (e.g. "Pacific/Auckland") and locale tag
+/// (e.g. "en-NZ"), if available. The SaaS uses these to infer the user's
+/// country for classifier context (TIMEZONE_TO_COUNTRY / LANGUAGE_TO_COUNTRY
+/// in src/lib/platform-detection.ts) — without them, desktop uploads have
+/// no signal at all (no Cloudflare in front of Convex → no cf-ipcountry).
+pub fn detect_system_locale() -> ClientLocale {
+    let timezone = iana_time_zone::get_timezone().ok();
+    let language = sys_locale::get_locale();
+    ClientLocale { timezone, language }
+}
 
 // =============================================================================
 // Public types
@@ -60,12 +75,37 @@ pub type UploadProgressCallback = Box<dyn Fn(u8, String) + Send + Sync>;
 // =============================================================================
 // Configuration
 // =============================================================================
+//
+// Two distinct base URLs:
+//   - WEB_BASE_URL: where the SvelteKit SPA lives (chattomap.com). The browser
+//     opens `<WEB_BASE_URL>/processing/<id>` after upload.
+//   - API_BASE_URL: where the Convex HTTP actions live (`*.convex.site`).
+//     The desktop POSTs presign/complete here. This is a *different host* from
+//     the web app — Convex serves HTTP actions from its own domain.
+//
+// Both are baked in at compile time. To target staging/local, set the env
+// vars `CHATTOMAP_WEB_URL` and/or `CONVEX_SITE_URL` when invoking `task build`.
+// The `dev-server` feature flag swaps the defaults to localhost.
 
 #[cfg(feature = "dev-server")]
-pub const SERVER_BASE_URL: &str = "http://localhost:5173";
-
+const DEFAULT_WEB_BASE_URL: &str = "http://localhost:5173";
 #[cfg(not(feature = "dev-server"))]
-pub const SERVER_BASE_URL: &str = "https://chattomap.com";
+const DEFAULT_WEB_BASE_URL: &str = "https://chattomap.com";
+
+#[cfg(feature = "dev-server")]
+const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:3211";
+#[cfg(not(feature = "dev-server"))]
+const DEFAULT_API_BASE_URL: &str = "https://animated-crow-936.convex.site";
+
+pub const WEB_BASE_URL: &str = match option_env!("CHATTOMAP_WEB_URL") {
+    Some(value) => value,
+    None => DEFAULT_WEB_BASE_URL,
+};
+
+pub const API_BASE_URL: &str = match option_env!("CONVEX_SITE_URL") {
+    Some(value) => value,
+    None => DEFAULT_API_BASE_URL,
+};
 
 const VISITOR_ID_FILENAME: &str = "visitor_id.txt";
 
@@ -101,15 +141,15 @@ pub fn read_or_create_visitor_id(app_local_data_dir: &Path) -> String {
 // =============================================================================
 
 fn build_client(
-    host_override: Option<&str>,
+    api_host_override: Option<&str>,
     custom_headers: &HashMap<String, String>,
 ) -> ApiClient {
-    let base_url = host_override.unwrap_or(SERVER_BASE_URL);
+    let base_url = api_host_override.unwrap_or(API_BASE_URL);
     ApiClient::new(base_url).with_extra_headers(custom_headers)
 }
 
-pub fn results_base_url(host_override: Option<&str>) -> String {
-    host_override.unwrap_or(SERVER_BASE_URL).to_string()
+pub fn results_base_url(web_host_override: Option<&str>) -> String {
+    web_host_override.unwrap_or(WEB_BASE_URL).to_string()
 }
 
 // =============================================================================
@@ -118,10 +158,10 @@ pub fn results_base_url(host_override: Option<&str>) -> String {
 
 pub async fn get_presigned_url(
     content_length: u64,
-    host_override: Option<&str>,
+    api_host_override: Option<&str>,
     custom_headers: &HashMap<String, String>,
 ) -> Result<PresignResponse, String> {
-    let client = build_client(host_override, custom_headers);
+    let client = build_client(api_host_override, custom_headers);
     let data = client.upload_presign(content_length).await?;
     Ok(PresignResponse {
         upload_url: data.upload_url,
@@ -190,15 +230,21 @@ pub async fn complete_upload(
     storage_id: &str,
     visitor_id: &str,
     original_filename: Option<&str>,
-    host_override: Option<&str>,
+    api_host_override: Option<&str>,
     custom_headers: &HashMap<String, String>,
 ) -> Result<CreateJobResponse, String> {
-    let client = build_client(host_override, custom_headers);
+    let client = build_client(api_host_override, custom_headers);
+    let locale = detect_system_locale();
+    let client_locale = if locale.timezone.is_some() || locale.language.is_some() {
+        Some(locale)
+    } else {
+        None
+    };
     let req = UploadCompleteRequest {
         storage_id: storage_id.to_string(),
         upload_platform: "imessage".to_string(),
         original_filename: original_filename.map(|s| s.to_string()),
-        client_locale: None,
+        client_locale,
         visitor_id: visitor_id.to_string(),
     };
     let data = client.upload_complete(req).await?;
@@ -209,9 +255,9 @@ pub async fn complete_upload(
 pub fn get_results_url(
     chat_analysis_id: &str,
     job_token: Option<&str>,
-    host_override: Option<&str>,
+    web_host_override: Option<&str>,
 ) -> String {
-    let base_url = host_override.unwrap_or(SERVER_BASE_URL);
+    let base_url = web_host_override.unwrap_or(WEB_BASE_URL);
     match job_token {
         Some(token) if !token.is_empty() => format!(
             "{}/processing/{}?token={}",

@@ -26,13 +26,15 @@ type HmacSha256 = Hmac<Sha256>;
 pub const DESKTOP_SIGNATURE_HEADER: &str = "X-Desktop-Signature";
 pub const DESKTOP_TIMESTAMP_HEADER: &str = "X-Desktop-Timestamp";
 
-/// Secret used to sign upload requests. Baked into the binary at compile time.
-/// In dev/test builds where the env var isn't set, we fall back to an empty
-/// string and let the server reject the request with a clear error.
-pub const DESKTOP_UPLOAD_SHARED_SECRET: &str = match option_env!("DESKTOP_UPLOAD_SHARED_SECRET") {
-    Some(value) => value,
-    None => "",
-};
+/// Secret used to sign upload requests so the SaaS can skip Turnstile (the
+/// desktop app cannot run a Turnstile widget). This is a *low-trust fence*,
+/// not real auth — anyone with the binary can extract it. Its only purpose
+/// is to keep random scripts from spamming `/api/upload/presign` with bogus
+/// payloads. The matching value is set as `DESKTOP_UPLOAD_SHARED_SECRET` in
+/// the Convex prod + staging deployments. To rotate: change both this
+/// constant and the Convex env var, ship a new desktop release.
+pub const DESKTOP_UPLOAD_SHARED_SECRET: &str =
+    "32e7bb07ee8360363ae4d24d7e1a1f0dac672086d06d223e180863e104c84741";
 
 /// Per-request locale information forwarded to the SaaS for results presentation.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
