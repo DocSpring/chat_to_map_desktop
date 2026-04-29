@@ -16,6 +16,7 @@ use chrono::{DateTime, Local, TimeZone};
 use imessage_database::{
     tables::{
         chat::Chat,
+        chat_handle::ChatToHandle,
         handle::Handle,
         messages::Message,
         table::{get_connection, Cacheable, Deduplicate, Table},
@@ -45,10 +46,17 @@ pub struct ExportedMessage {
     pub text: String,
 }
 
-/// Metadata about an exported chat
+/// Metadata about an exported chat.
+///
+/// `participant_count` is the number of distinct people in the chat OTHER
+/// than the device owner (1 for a 1:1 chat, N for a group of N+1 people).
+/// The SaaS uses this to format the display title — see
+/// `convex/uploadPlatform.ts:deriveIMessageDisplayTitle`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExportedChatMeta {
-    /// Chat display name
+    /// Resolved chat display name. Falls back from custom group name → 1:1
+    /// contact name → identifier → "Chat <id>". Same resolution as the
+    /// chat list UI.
     pub name: String,
     /// Raw chat identifier (phone number, email, or group ID)
     pub identifier: String,
@@ -56,6 +64,8 @@ pub struct ExportedChatMeta {
     pub service: String,
     /// Number of messages exported
     pub message_count: usize,
+    /// Number of OTHER participants (excludes device owner). 1 = 1:1 chat.
+    pub participant_count: usize,
 }
 
 /// Complete export data for a single chat
@@ -144,6 +154,11 @@ pub fn export_chats(
 
     // Cache chats for metadata
     let chats = Chat::cache(&db).map_err(|e| format!("Failed to load chats: {e}"))?;
+    // Per-chat participant handle IDs — used to resolve 1:1 chat display
+    // names from the contact's name (instead of falling back to the chat ID)
+    // and to count other-participants for the title (e.g. "and N others").
+    let chat_participants =
+        ChatToHandle::cache(&db).map_err(|e| format!("Failed to load chat participants: {e}"))?;
 
     emit_progress(ExportProgress {
         stage: "Preparing".to_string(),
@@ -242,15 +257,31 @@ pub fn export_chats(
     let mut exported_chats = Vec::new();
     for (&chat_id, messages) in &messages_by_chat {
         let chat = chats.get(&chat_id);
+        let participants = chat_participants.get(&chat_id);
+        let identifier = chat.map(|c| c.chat_identifier.clone()).unwrap_or_default();
+        let resolved_name = chat
+            .map(|c| {
+                crate::resolve_chat_display_name(
+                    c,
+                    participants,
+                    &participants_map,
+                    &deduped_handles,
+                )
+            })
+            .filter(|s| !s.is_empty())
+            // Last-resort fallbacks: identifier (the phone/email/group ID),
+            // then a stable synthetic name. Both should be rare — the
+            // resolver almost always returns something useful.
+            .or_else(|| (!identifier.is_empty()).then(|| identifier.clone()))
+            .unwrap_or_else(|| format!("Chat {}", chat_id));
         let meta = ExportedChatMeta {
-            name: chat
-                .and_then(|c| c.display_name.clone())
-                .unwrap_or_else(|| format!("Chat {}", chat_id)),
-            identifier: chat.map(|c| c.chat_identifier.clone()).unwrap_or_default(),
+            name: resolved_name,
+            identifier,
             service: chat
                 .and_then(|c| c.service_name.clone())
                 .unwrap_or_else(|| "Unknown".to_string()),
             message_count: messages.len(),
+            participant_count: participants.map(|p| p.len()).unwrap_or(0),
         };
 
         exported_chats.push(ExportedChat {
