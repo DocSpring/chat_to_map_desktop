@@ -239,22 +239,23 @@ fn check_full_disk_access(state: tauri::State<AppState>) -> Result<bool, String>
 
     #[cfg(target_os = "macos")]
     {
-        // Check if we can actually read the database
+        // Try to open the database directly. We deliberately do NOT pre-check
+        // `db_path.exists()` first: on macOS, `Path::exists()` calls stat(),
+        // which itself requires Full Disk Access for TCC-protected paths under
+        // ~/Library/Messages. Without FDA, exists() returns false even when
+        // the file is there — so the pre-check would short-circuit BEFORE we
+        // ever try to open the DB, leaving the user stuck on the permissions
+        // screen even after granting access. SQLite's open call is the
+        // authoritative source: it succeeds with FDA, fails without.
         let db_path = default_db_path();
         eprintln!("[check_full_disk_access] DB path: {:?}", db_path);
-        if !db_path.exists() {
-            eprintln!("[check_full_disk_access] DB does not exist");
-            return Ok(false);
-        }
-
-        // Try to open the database - this will fail without FDA
         match get_connection(&db_path) {
             Ok(_) => {
                 eprintln!("[check_full_disk_access] FDA granted (can open DB)");
                 Ok(true)
             }
             Err(e) => {
-                eprintln!("[check_full_disk_access] FDA denied: {:?}", e);
+                eprintln!("[check_full_disk_access] cannot open DB: {:?}", e);
                 Ok(false)
             }
         }
