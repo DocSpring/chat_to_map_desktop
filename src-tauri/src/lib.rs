@@ -196,7 +196,7 @@ pub fn list_chats(custom_db_path: Option<&std::path::Path>) -> Result<Vec<ChatIn
         .collect();
 
     // Sort by last message date descending (most recent first)
-    result.sort_by(|a, b| b.1.cmp(&a.1));
+    result.sort_by_key(|item| std::cmp::Reverse(item.1));
 
     // Extract just the ChatInfo
     let result: Vec<ChatInfo> = result.into_iter().map(|(info, _)| info).collect();

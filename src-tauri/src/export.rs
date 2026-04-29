@@ -260,7 +260,7 @@ pub fn export_chats(
     }
 
     // Sort by message count descending
-    exported_chats.sort_by(|a, b| b.messages.len().cmp(&a.messages.len()));
+    exported_chats.sort_by_key(|c| std::cmp::Reverse(c.messages.len()));
 
     // Write each chat to a separate JSON file and create zip
     let zip_path = temp_dir.path().join("export.zip");
