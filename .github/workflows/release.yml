@@ -59,6 +59,11 @@ jobs:
             2. Open the DMG
             3. Double-click ChatToMap to run it
 
+            **macOS unsigned binary note:** This macOS binary is currently unsigned
+            while we wait for Apple Developer Program enrollment. macOS may show an
+            extra warning before opening it, so only download ChatToMap Desktop from
+            this GitHub release.
+
             **Windows:**
             1. Download `ChatToMap_x64.exe`
             2. Double-click to run it

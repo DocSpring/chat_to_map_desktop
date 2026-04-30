@@ -14,6 +14,11 @@ ChatToMap Desktop reads your iMessage database directly and exports conversation
 
 Download the latest release from the [Releases](https://github.com/DocSpring/chat_to_map_desktop/releases) page.
 
+**macOS unsigned binary note:** The macOS binary is currently unsigned while we wait
+for Apple Developer Program enrollment. macOS may show an extra warning before
+opening it, so only download ChatToMap Desktop from the GitHub Releases page linked
+above.
+
 On first launch, you'll be prompted to grant Full Disk Access in System Preferences.
 
 ---
